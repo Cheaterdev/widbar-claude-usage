@@ -1,0 +1,207 @@
+name: Release
+
+# Builds the x64 + ARM64 MSIX bundle and publishes a GitHub Release.
+#
+#   git tag v1.2.0 && git push origin v1.2.0
+#
+# Pushing a tag like v1.2.0 builds the package and creates a Release for it.
+# Running the workflow by hand (Actions > Release > Run workflow) builds the
+# package and keeps it as a workflow artifact, without creating a Release.
+#
+# Signing is optional. Add these repository secrets to ship an installable,
+# signed package:
+#   SIGNING_CERT_BASE64    the .pfx certificate, base64 encoded
+#   SIGNING_CERT_PASSWORD  its password
+# Without them the build is unsigned: fine for the Microsoft Store upload, but
+# Windows will not install an unsigned .msixbundle directly.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, e.g. 1.2.0 (a tag push uses the tag instead)"
+        required: false
+        default: "0.0.0"
+
+permissions:
+  contents: write # needed to create the Release
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  SOLUTION_DIR: ClaudeUsage
+  PROJECT: ClaudeUsage/ClaudeUsage (Package)/ClaudeUsage (Package).wapproj
+  MANIFEST: ClaudeUsage/ClaudeUsage (Package)/Package.appxmanifest
+  APP_CSPROJ: ClaudeUsage/ClaudeUsage.ExtensionApp/ClaudeUsage.ExtensionApp.csproj
+  # "true" when the signing secrets are configured. Secrets can't be tested in
+  # an `if:` directly, so they are copied into this flag first.
+  HAS_CERT: ${{ secrets.SIGNING_CERT_BASE64 != '' }}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Work out the version
+        id: ver
+        shell: pwsh
+        env:
+          MANUAL_VERSION: ${{ inputs.version }}
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag') { $raw = $env:GITHUB_REF_NAME.TrimStart('v') }
+          else { $raw = $env:MANUAL_VERSION }
+          if ($raw -notmatch '^(\d+\.\d+\.\d+)') { throw "Version '$raw' must look like 1.2.3 (optionally with a suffix such as -beta.1)." }
+          $core = $Matches[1]
+          "version=$core"                  >> $env:GITHUB_OUTPUT
+          "package_version=$core.0"        >> $env:GITHUB_OUTPUT   # the Store wants the 4th number at 0
+          "prerelease=$($raw.Contains('-').ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          "Building version $raw (package $core.0)"
+
+      - name: Stamp the version into the project
+        shell: pwsh
+        run: |
+          $core = '${{ steps.ver.outputs.version }}'
+          $pkg  = '${{ steps.ver.outputs.package_version }}'
+
+          $manifest = Get-Content $env:MANIFEST -Raw
+          $manifest = [regex]::Replace($manifest, '(?s)(<Identity\b[^>]*?\bVersion=")[^"]*(")', ('${1}' + $pkg + '${2}'), 1)
+          Set-Content $env:MANIFEST $manifest -NoNewline -Encoding utf8
+
+          $csproj = Get-Content $env:APP_CSPROJ -Raw
+          $csproj = [regex]::Replace($csproj, '(<WidBarPluginVersion>)[^<]*(</WidBarPluginVersion>)', ('${1}' + $core + '${2}'))
+          Set-Content $env:APP_CSPROJ $csproj -NoNewline -Encoding utf8
+
+      - name: Import the signing certificate
+        id: cert
+        if: ${{ env.HAS_CERT == 'true' }}
+        shell: pwsh
+        env:
+          CERT_BASE64: ${{ secrets.SIGNING_CERT_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP 'signing.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERT_BASE64))
+          $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($pfx, $env:CERT_PASSWORD)
+
+          # The package Publisher must match the certificate subject exactly.
+          $subject = [Security.SecurityElement]::Escape($cert.Subject)
+          $manifest = Get-Content $env:MANIFEST -Raw
+          $manifest = [regex]::Replace($manifest, '(?s)(<Identity\b[^>]*?\bPublisher=")[^"]*(")', ('${1}' + $subject + '${2}'), 1)
+          Set-Content $env:MANIFEST $manifest -NoNewline -Encoding utf8
+
+          # Public certificate, so people can trust the package when sideloading.
+          New-Item -ItemType Directory -Force dist | Out-Null
+          [IO.File]::WriteAllBytes("dist/ClaudeUsage-${{ steps.ver.outputs.version }}.cer", $cert.Export('Cert'))
+
+          "pfx=$pfx" >> $env:GITHUB_OUTPUT
+
+      - name: Restore
+        shell: pwsh
+        run: msbuild "$env:PROJECT" -t:Restore -p:Configuration=Release -p:Platform=x64
+
+      # Restore and build must be separate MSBuild calls (see the template docs,
+      # "Pitfalls": a combined call fails in MakeAppx with 80080204).
+      - name: Build the x64 + ARM64 bundle
+        shell: pwsh
+        env:
+          CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
+        run: |
+          $msbArgs = @(
+            $env:PROJECT, '-t:Build',
+            '-p:Configuration=Release', '-p:Platform=x64',
+            '-p:AppxBundle=Always', '-p:AppxBundlePlatforms=x64|arm64',
+            '-p:UapAppxPackageBuildMode=StoreAndSideload',
+            '-p:AppxAutoIncrementPackageRevision=false'
+          )
+          if ($env:HAS_CERT -eq 'true') {
+            $msbArgs += '-p:AppxPackageSigningEnabled=true'
+            $msbArgs += "-p:PackageCertificateKeyFile=${{ steps.cert.outputs.pfx }}"
+            $msbArgs += "-p:PackageCertificatePassword=$env:CERT_PASSWORD"
+          }
+          msbuild @msbArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Gather the release files
+        id: files
+        shell: pwsh
+        run: |
+          $v = '${{ steps.ver.outputs.version }}'
+          $signed = $env:HAS_CERT -eq 'true'
+          New-Item -ItemType Directory -Force dist | Out-Null
+
+          $pkgRoot = Split-Path $env:PROJECT -Parent
+          $found = Get-ChildItem (Join-Path $pkgRoot 'AppPackages') -Recurse -File |
+            Where-Object { $_.Extension -in '.msixupload', '.msixbundle' }
+          $found | ForEach-Object { Write-Host "found: $($_.FullName)" }
+
+          $store = $found | Where-Object Extension -eq '.msixupload' | Select-Object -First 1
+          $bundle = $found | Where-Object Extension -eq '.msixbundle' | Select-Object -First 1
+          if (-not $store -and -not $bundle) { throw 'No .msixupload or .msixbundle was produced. See the build log.' }
+
+          if ($store)  { Copy-Item $store.FullName  "dist/ClaudeUsage-$v-store.msixupload" }
+          if ($bundle) {
+            $suffix = if ($signed) { '' } else { '-unsigned' }
+            Copy-Item $bundle.FullName "dist/ClaudeUsage-$v$suffix.msixbundle"
+          }
+
+          # Release notes shown on the Release page (generated notes are added below them).
+          if ($signed) {
+            $install = @(
+              '## Install',
+              '',
+              "1. Download **ClaudeUsage-$v.cer**, open it, choose **Install Certificate** > **Local Machine** and place it in **Trusted People**. This is needed once, because the package is signed with the project's own certificate.",
+              "2. Download and open **ClaudeUsage-$v.msixbundle**, then choose **Install**.",
+              '3. Open WidBar and add **Claude Usage** from the catalog. If it is missing, press **Refresh** on the Layout page.'
+            )
+          } else {
+            $install = @(
+              '## Install',
+              '',
+              "This build is **not signed**, so Windows will not install the bundle directly. It is meant for submitting to the Microsoft Store (**ClaudeUsage-$v-store.msixupload**)."
+            )
+          }
+          $install += @('', 'Requires Windows 11, WidBar and Claude Code. See the README for setup.')
+          Set-Content dist/release-notes.md $install -Encoding utf8
+
+          Get-ChildItem dist | Format-Table Name, Length
+
+      - name: Upload the build as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClaudeUsage-${{ steps.ver.outputs.version }}
+          path: |
+            dist/*.msixbundle
+            dist/*.msixupload
+            dist/*.cer
+          if-no-files-found: error
+
+      - name: Create the GitHub Release
+        if: ${{ github.ref_type == 'tag' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Claude Usage ${{ steps.ver.outputs.version }}
+          body_path: dist/release-notes.md
+          generate_release_notes: true
+          prerelease: ${{ steps.ver.outputs.prerelease == 'true' }}
+          files: |
+            dist/*.msixbundle
+            dist/*.msixupload
+            dist/*.cer
+          fail_on_unmatched_files: false
