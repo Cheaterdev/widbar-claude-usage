@@ -8,6 +8,41 @@ namespace ClaudeUsage.ExtensionApp;
 // Settings page and the taskbar gauges it previews.
 public sealed partial class MainPlugin
 {
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    // Opens the system folder picker. The settings window is the foreground window
+    // right after the Browse click, so it is used as the dialog's owner.
+    private static async Task<string?> PickFolderAsync()
+    {
+        try
+        {
+            var picker = new Windows.Storage.Pickers.FolderPicker();
+            picker.FileTypeFilter.Add("*");
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, GetForegroundWindow());
+            var folder = await picker.PickSingleFolderAsync();
+            return folder?.Path;
+        }
+        catch { return null; }
+    }
+
+    // A path box with a Browse button next to it.
+    private FrameworkElement FolderBox(string? value, string placeholder, Action<string?> set)
+    {
+        var box = new TextBox { Width = 220, PlaceholderText = placeholder, Text = value ?? "" };
+        box.TextChanged += (_, _) => set(string.IsNullOrWhiteSpace(box.Text) ? null : box.Text.Trim());
+        var browse = new Button { Content = L("Browse…") };
+        browse.Click += async (_, _) =>
+        {
+            var path = await PickFolderAsync();
+            if (path is not null) box.Text = path;
+        };
+        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        panel.Children.Add(box);
+        panel.Children.Add(browse);
+        return panel;
+    }
+
     // ---- Taskbar gauges (shared by the taskbar preview and the settings preview) ----
 
     private sealed record PreviewGauge(ArcRing Ring, TextBlock Text, UIElement View, TextBlock? Label, string Name, bool TimeLeft)
@@ -351,18 +386,10 @@ public sealed partial class MainPlugin
         page.Children.Add(Row("", L("Refresh every"), L("Plan limits are asked for at most every 5 minutes."), refresh));
         page.Children.Add(Row("", L("Count cache reads"), L("Include cached input in token totals. Cache reads are cheap, so they are off by default."),
             Toggle(draft.IncludeCacheReads, v => draft.IncludeCacheReads = v)));
-        var folder = new TextBox
-        {
-            Width = 280,
-            PlaceholderText = UsageReader.DefaultRoot,
-            Text = draft.DataFolder ?? "",
-        };
-        folder.TextChanged += (_, _) =>
-        {
-            draft.DataFolder = string.IsNullOrWhiteSpace(folder.Text) ? null : folder.Text.Trim();
-            Changed();
-        };
-        page.Children.Add(Row("", L("Claude data folder"), L("Claude Code's session logs. Leave empty for the default."), folder));
+        page.Children.Add(Row("", L("Claude data folder"), L("Claude Code's session logs. Leave empty for the default."),
+            FolderBox(draft.DataFolder, UsageReader.DefaultRoot, v => { draft.DataFolder = v; Changed(); })));
+        page.Children.Add(Row("", L("Shared folder"), L("Combine usage from several computers. Point each one at the same synced folder."),
+            FolderBox(draft.SyncFolder, L("Not shared"), v => { draft.SyncFolder = v; Changed(); })));
 
         // ---- Token budgets ----
         page.Children.Add(Section(L("Token budgets"), L("Used for the gauges when you are not signed in.")));

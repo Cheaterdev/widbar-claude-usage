@@ -4,6 +4,10 @@ See how much of your Claude limits you have used, right on your Windows 11 taskb
 
 Claude Usage is a widget for [WidBar](https://apps.microsoft.com/detail/9PKLDNM83TP9). A glance at the taskbar shows your 5-hour and weekly usage as small progress rings. Click it for details: reset times, estimated cost, and usage by day and by model.
 
+<p align="center">
+  <img src="preview.png" alt="The Claude Usage flyout above the taskbar widget: 5-hour, weekly and daily rings, estimated cost, the last 7 days and usage by model" width="320">
+</p>
+
 > This is an unofficial, community project. It is not made by or affiliated with Anthropic.
 
 ## What you get
@@ -16,7 +20,9 @@ Claude Usage is a widget for [WidBar](https://apps.microsoft.com/detail/9PKLDNM8
 
 **In the flyout (click the widget)**
 
-- Large rings for each limit, with the time they reset.
+- Large rings for each limit, with the time left, the reset time and a small progress bar. A pace note tells you whether you are on pace, ahead or behind.
+- Your extra usage credits, when you have them turned on.
+- A picker to look at one computer or all of them (see *Using Claude on several computers*).
 - **Estimated cost** for today, the last 7 days and the last 30 days, with the number of tokens behind each figure.
 - A bar chart of the last 7 days.
 - Usage by model over the last 30 days.
@@ -60,6 +66,16 @@ Open the widget's settings from WidBar, or from the gear in the flyout. A live p
 ## Languages
 
 The widget follows WidBar's language setting (or your Windows display language if WidBar is set to automatic). Available: English, Ukrainian, German, Spanish, French and Italian. Anything else shows English.
+
+## Using Claude on several computers
+
+Token counts, costs, history and model usage come from Claude Code's files on each computer, so by default every computer shows only its own. To see the total:
+
+1. Pick a folder that all your computers can reach, such as a OneDrive or Syncthing folder or a network share. Keeping it in sync is up to you.
+2. On each computer with the widget, set **Settings > Data > Shared folder** to that folder (the path can differ per computer). The widget writes one small file (`usage-<computer>.json`, token counts per 15 minutes and model, no prompts or file names) and reads the files of the others.
+3. On a computer that cannot run the widget (a NAS, a Linux server), run `tools/export-usage.py <folder>` every few minutes, for example from cron. It writes the same kind of file.
+
+When more than one computer has reported usage, the flyout shows a picker (**All computers**, or one computer) that filters the cost tiles, the 7-day chart and the model breakdown. The rings are not filtered: the 5-hour and weekly percentages always come from your account and already cover everything.
 
 ## Good to know
 

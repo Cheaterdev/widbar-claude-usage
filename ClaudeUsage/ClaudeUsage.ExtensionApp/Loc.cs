@@ -227,6 +227,17 @@ internal static class Loc
         R("Claude data folder", "Папка даних Claude", "Claude-Datenordner", "Carpeta de datos de Claude", "Dossier de données Claude", "Cartella dati di Claude");
         R("Claude Code's session logs. Leave empty for the default.", "Журнали сесій Claude Code. Залиште порожнім для значення за замовчуванням.",
             "Sitzungsprotokolle von Claude Code. Leer lassen für den Standard.", "Registros de sesión de Claude Code. Déjalo vacío para el valor predeterminado.", "Journaux de session de Claude Code. Laissez vide pour la valeur par défaut.", "Log di sessione di Claude Code. Lascia vuoto per il valore predefinito.");
+        R("Browse…", "Огляд…", "Durchsuchen…", "Examinar…", "Parcourir…", "Sfoglia…");
+        R("All computers", "Усі комп'ютери", "Alle Computer", "Todos los equipos", "Tous les ordinateurs", "Tutti i computer");
+        R("{0} (this PC)", "{0} (цей ПК)", "{0} (dieser PC)", "{0} (este equipo)", "{0} (cet ordinateur)", "{0} (questo PC)");
+        R("Shared folder", "Спільна папка", "Gemeinsamer Ordner", "Carpeta compartida", "Dossier partagé", "Cartella condivisa");
+        R("Not shared", "Не використовується", "Nicht geteilt", "No compartida", "Non partagé", "Non condivisa");
+        R("Combine usage from several computers. Point each one at the same synced folder.",
+            "Об'єднайте використання з кількох комп'ютерів. Вкажіть на всіх ту саму синхронізовану папку.",
+            "Nutzung mehrerer Computer zusammenführen. Auf allen denselben synchronisierten Ordner angeben.",
+            "Combina el uso de varios equipos. Indica en todos la misma carpeta sincronizada.",
+            "Regroupe l'utilisation de plusieurs ordinateurs. Indiquez le même dossier synchronisé partout.",
+            "Unisci l'uso di più computer. Indica la stessa cartella sincronizzata su ciascuno.");
         R("Token budgets", "Бюджети токенів", "Token-Budgets", "Presupuestos de tokens", "Budgets de jetons", "Budget di token");
         R("Used for the gauges when you are not signed in.", "Використовуються для індикаторів, коли ви не ввійшли.", "Wird für die Anzeigen ohne Anmeldung verwendet.", "Se usan para los indicadores sin sesión iniciada.", "Utilisés pour les jauges sans connexion.", "Usati per gli indicatori senza accesso.");
         R("5-hour budget", "Бюджет на 5 годин", "5-Stunden-Budget", "Presupuesto de 5 horas", "Budget de 5 heures", "Budget di 5 ore");

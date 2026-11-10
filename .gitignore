@@ -60,3 +60,5 @@ Desktop.ini
 .DS_Store
 .idea/
 *.swp
+
+dist-local/

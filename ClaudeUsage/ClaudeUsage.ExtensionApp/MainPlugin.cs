@@ -16,7 +16,11 @@ public sealed partial class MainPlugin :
     IWidgetFlyoutLifecycle
 {
     private Settings _settings = new();
-    private UsageSnapshot? _snapshot;
+    private UsageSnapshot? _snapshot;          // every computer: drives the gauges
+    private UsageSnapshot? _view;              // the computer picked in the flyout: costs, chart, models
+    private List<Bucket> _buckets = [];
+    private DateTime? _weekStart;
+    private string? _filter;                   // null = all computers
     private Grid? _previewRoot;
     private PreviewGauge? _g1, _g2, _g3;
     private StackPanel? _flyoutRoot;
@@ -51,6 +55,8 @@ public sealed partial class MainPlugin :
         public int RefreshMinutes { get; set; } = 1;
         public bool IncludeCacheReads { get; set; } = false;
         public string? DataFolder { get; set; }
+        // Optional folder shared between computers (synced by the user) for combined statistics.
+        public string? SyncFolder { get; set; }
         // Token budgets in millions. Used when plan limits aren't available
         // (not signed in), and for the Today ring.
         public double SessionLimitM { get; set; } = 2;
@@ -171,12 +177,21 @@ public sealed partial class MainPlugin :
             }
             // The weekly window started 7 days before it resets.
             var weekStart = _plan?.Limits?.WeekResets?.ToLocalTime().DateTime.AddDays(-7);
-            var snap = await Task.Run(() => UsageReader.Read(folder, weekStart));
-            _snapshot = snap;
+            var sync = _settings.SyncFolder;
+            _buckets = await Task.Run(() => UsageReader.ReadBuckets(folder, sync));
+            _weekStart = weekStart;
+            Recompute();
             _dispatcher?.TryEnqueue(() => { if (Loc.Refresh()) RebuildPreview(); RenderPreview(); RenderFlyout(); });
         }
         catch { /* keep showing the last snapshot */ }
         finally { Interlocked.Exchange(ref _refreshing, 0); }
+    }
+
+    private void Recompute()
+    {
+        _snapshot = UsageReader.Aggregate(_buckets, _weekStart);
+        if (_filter is not null && !(_snapshot.Sources?.Contains(_filter) ?? false)) _filter = null;
+        _view = _filter is null ? _snapshot : UsageReader.Aggregate(_buckets, _weekStart, _filter);
     }
 
     private void RenderPreview()
@@ -275,6 +290,8 @@ public sealed partial class MainPlugin :
             return;
         }
 
+        var v = _view ?? s;
+
         var row = new Grid { ColumnSpacing = 8 };
         void Ring(int col, string label, double pct, string subtitle, Windows.UI.Color color,
                   DateTimeOffset? resets = null, TimeSpan window = default)
@@ -370,6 +387,24 @@ public sealed partial class MainPlugin :
             Ring(2, L("Today"), Percent(s.Today, _settings.DayLimitM), Local(s.Today, _settings.DayLimitM), ArcRing.Teal);
         p.Add(row);
 
+        // Filter for everything below (the rings above are account-wide).
+        if (s.Sources is { Count: > 1 } sources)
+        {
+            var all = L("All computers");
+            var names = new List<string?> { null };
+            names.AddRange(sources);
+            var pick = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
+            foreach (var n in names) pick.Items.Add(n is null ? all : n == Environment.MachineName ? L("{0} (this PC)", n) : n);
+            pick.SelectedIndex = Math.Max(0, names.IndexOf(_filter));
+            pick.SelectionChanged += (_, _) =>
+            {
+                if (pick.SelectedIndex < 0 || names[pick.SelectedIndex] == _filter) return;
+                _filter = names[pick.SelectedIndex];
+                _dispatcher?.TryEnqueue(() => { Recompute(); RenderFlyout(); });
+            };
+            p.Add(pick);
+        }
+
         p.Add(SectionHeader(L("Estimated API cost")));
         var costs = new Grid { ColumnSpacing = 8 };
         for (var i = 0; i < 3; i++) costs.ColumnDefinitions.Add(new ColumnDefinition());
@@ -388,9 +423,9 @@ public sealed partial class MainPlugin :
             Grid.SetColumn(card, col);
             costs.Children.Add(card);
         }
-        Cost(0, L("Today"), s.Today);
-        Cost(1, L("7 days"), s.Last7Days);
-        Cost(2, L("30 days"), s.Last30Days);
+        Cost(0, L("Today"), v.Today);
+        Cost(1, L("7 days"), v.Last7Days);
+        Cost(2, L("30 days"), v.Last30Days);
         p.Add(costs);
 
         // Extra usage credits (a monthly spending cap on top of the plan), when enabled.
@@ -444,22 +479,22 @@ public sealed partial class MainPlugin :
         }
 
         p.Add(SectionHeader(L("Last 7 days")));
-        var max = Math.Max(1, s.Daily7.Max(d => d.Totals.Headline(cache)));
+        var max = Math.Max(1, v.Daily7.Max(d => d.Totals.Headline(cache)));
         var days = new StackPanel { Spacing = 6 };
-        foreach (var (day, t) in s.Daily7)
+        foreach (var (day, t) in v.Daily7)
             days.Children.Add(BarRow(day.ToString("ddd d", Loc.Culture), t.Headline(cache), max));
         p.Add(days);
 
         p.Add(SectionHeader(L("By model · 30 days (est. cost)")));
-        var mmax = Math.Max(1, s.ByModel30.Max(m => m.Totals.Headline(cache)));
+        var mmax = Math.Max(1, v.ByModel30.Select(m => m.Totals.Headline(cache)).DefaultIfEmpty(0).Max());
         var models = new StackPanel { Spacing = 6 };
-        foreach (var (model, t) in s.ByModel30.Take(6))
+        foreach (var (model, t) in v.ByModel30.Take(6))
             models.Children.Add(BarRow(UsageReader.FriendlyModel(model), t.Headline(cache), mmax, UsageReader.Money(t.Cost)));
         p.Add(models);
 
         var note = cache
             ? L("Totals include cache reads.")
-            : L("Cache reads not counted ({0} in 30 days).", UsageReader.Compact(s.Last30Days.CacheRead));
+            : L("Cache reads not counted ({0} in 30 days).", UsageReader.Compact(v.Last30Days.CacheRead));
         p.Add(new TextBlock
         {
             Text = L("{0} Costs = tokens x Anthropic's published API prices, not your plan bill. Source: Claude Code logs. Updated {1}.", note, s.GeneratedAt.ToString("t", Loc.Culture)),

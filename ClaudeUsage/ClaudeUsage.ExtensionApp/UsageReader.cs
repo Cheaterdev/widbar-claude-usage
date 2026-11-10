@@ -26,7 +26,8 @@ public sealed record UsageSnapshot(
     IReadOnlyList<(string Model, Totals Totals)> ByModel30,
     int Messages30,
     Totals? WeekWindow = null,       // since the current weekly window started
-    Totals? TodayInWindow = null);   // today, but only the part inside that window
+    Totals? TodayInWindow = null,    // today, but only the part inside that window
+    IReadOnlyList<string>? Sources = null); // computers that contributed (all of them, even when filtered)
 
 // Reads Claude Code's local session logs (~/.claude/projects/**/*.jsonl). Every
 // assistant message carries a usage block; we sum those. Nothing leaves the
@@ -36,17 +37,72 @@ public static class UsageReader
     public static string DefaultRoot =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "projects");
 
-    public static UsageSnapshot Read(string? root, DateTime? weekStart = null)
+    private const long BucketTicks = TimeSpan.TicksPerMinute * 15;
+
+    // Reads this computer's logs, optionally shares them through syncFolder and
+    // merges in what other computers shared there.
+    public static List<Bucket> ReadBuckets(string? root, string? syncFolder = null)
     {
-        root = string.IsNullOrWhiteSpace(root) ? DefaultRoot : root;
+        var local = ReadLocal(root);
+        var all = local;
+        if (!string.IsNullOrWhiteSpace(syncFolder))
+        {
+            var folder = syncFolder.Trim();
+            SyncStore.Write(folder, local);
+            all = local.Concat(SyncStore.ReadOthers(folder, DateTime.UtcNow.AddDays(-31))).ToList();
+        }
+        return all;
+    }
+
+    // source = null sums every computer; otherwise only the named one.
+    public static UsageSnapshot Aggregate(IReadOnlyList<Bucket> allBuckets, DateTime? weekStart, string? source = null)
+    {
+        var sources = allBuckets.Select(b => b.Source).Distinct().OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
+        var buckets = source is null ? allBuckets : allBuckets.Where(b => b.Source == source).ToList();
         var now = DateTime.Now;
         var today = DateOnly.FromDateTime(now);
         var cutoff = now.AddDays(-30);
-        var seen = new HashSet<string>();
         var perDay = new Dictionary<DateOnly, Totals>();
         var perModel = new Dictionary<string, Totals>();
         Totals h5 = Totals.Zero, d1 = Totals.Zero, d7 = Totals.Zero, d30 = Totals.Zero, ww = Totals.Zero, tw = Totals.Zero;
         int messages = 0;
+
+        foreach (var b in buckets)
+        {
+            var local = DateTime.SpecifyKind(b.StartUtc, DateTimeKind.Utc).ToLocalTime();
+            if (local < cutoff) continue;
+            var t = b.Totals;
+            messages += b.Messages;
+            d30 += t;
+            var day = DateOnly.FromDateTime(local);
+            perDay[day] = perDay.GetValueOrDefault(day, Totals.Zero) + t;
+            perModel[b.Model] = perModel.GetValueOrDefault(b.Model, Totals.Zero) + t;
+            if (day == today) d1 += t;
+            if (day >= today.AddDays(-6)) d7 += t;
+            if (local >= now.AddHours(-5)) h5 += t;
+            if (weekStart is { } ws && local >= ws) { ww += t; if (day == today) tw += t; }
+        }
+
+        var daily = Enumerable.Range(0, 7)
+            .Select(i => today.AddDays(i - 6))
+            .Select(d => (d, perDay.GetValueOrDefault(d, Totals.Zero)))
+            .ToList();
+        var models = perModel
+            .OrderByDescending(kv => kv.Value.Headline(false))
+            .Select(kv => (kv.Key, kv.Value))
+            .ToList();
+
+        return new UsageSnapshot(now, h5, d1, d7, d30, daily, models, messages, weekStart is null ? null : ww, weekStart is null ? null : tw, sources);
+    }
+
+    // Claude Code's own logs, summed into 15-minute buckets per model.
+    private static List<Bucket> ReadLocal(string? root)
+    {
+        root = string.IsNullOrWhiteSpace(root) ? DefaultRoot : root;
+        var now = DateTime.Now;
+        var cutoff = now.AddDays(-30);
+        var seen = new HashSet<string>();
+        var buckets = new Dictionary<(long Ticks, string Model), (Totals T, int N)>();
 
         if (Directory.Exists(root))
         {
@@ -70,31 +126,17 @@ public static class UsageReader
                         if (local < cutoff) continue;
                         if (key is not null && !seen.Add(key)) continue;
 
-                        messages++;
-                        d30 += t;
-                        var day = DateOnly.FromDateTime(local);
-                        perDay[day] = perDay.GetValueOrDefault(day, Totals.Zero) + t;
-                        perModel[model] = perModel.GetValueOrDefault(model, Totals.Zero) + t;
-                        if (day == today) d1 += t;
-                        if (day >= today.AddDays(-6)) d7 += t;
-                        if (local >= now.AddHours(-5)) h5 += t;
-                        if (weekStart is { } ws && local >= ws) { ww += t; if (day == today) tw += t; }
+                        var utcTicks = ts.ToUniversalTime().Ticks;
+                        var k = (utcTicks - utcTicks % BucketTicks, model);
+                        var cur = buckets.GetValueOrDefault(k, (Totals.Zero, 0));
+                        buckets[k] = (cur.Item1 + t, cur.Item2 + 1);
                     }
                 }
                 catch { /* file locked or being rewritten; skip it this round */ }
             }
         }
 
-        var daily = Enumerable.Range(0, 7)
-            .Select(i => today.AddDays(i - 6))
-            .Select(d => (d, perDay.GetValueOrDefault(d, Totals.Zero)))
-            .ToList();
-        var models = perModel
-            .OrderByDescending(kv => kv.Value.Headline(false))
-            .Select(kv => (kv.Key, kv.Value))
-            .ToList();
-
-        return new UsageSnapshot(now, h5, d1, d7, d30, daily, models, messages, weekStart is null ? null : ww, weekStart is null ? null : tw);
+        return buckets.Select(kv => new Bucket(new DateTime(kv.Key.Ticks, DateTimeKind.Utc), kv.Key.Model, kv.Value.T, kv.Value.N, Environment.MachineName)).ToList();
     }
 
     private static bool TryParse(string line, out DateTime ts, out string model, out Totals totals, out string? key)
