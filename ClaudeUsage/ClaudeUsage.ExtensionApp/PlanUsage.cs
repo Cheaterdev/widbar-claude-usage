@@ -83,8 +83,21 @@ public static class PlanUsage
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         // Built from the profile folder: in a packaged app %APPDATA% can point at the app's private copy.
-        var dirs = new List<string> { Path.Combine(home, ".local", "bin"), Path.Combine(home, "AppData", "Roaming", "npm") };
+        var local = Path.Combine(home, "AppData", "Local");
+        var dirs = new List<string>
+        {
+            Path.Combine(home, ".local", "bin"),                    // native installer
+            Path.Combine(home, "AppData", "Roaming", "npm"),        // npm
+            Path.Combine(home, ".claude", "local"),                 // old "local" install
+            Path.Combine(home, ".claude", "local", "node_modules", ".bin"),
+            Path.Combine(local, "Microsoft", "WinGet", "Links"),    // winget
+            Path.Combine(home, "scoop", "shims"),                   // scoop
+            Path.Combine(home, ".volta", "bin"),                    // volta
+        };
         dirs.AddRange((Environment.GetEnvironmentVariable("PATH") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries));
+        // The widget may have started before Claude Code was installed, so its own PATH is stale.
+        // The saved user and machine PATH are read as well.
+        dirs.AddRange(SavedPath());
         // The native installer gives claude.exe; an npm install gives claude.cmd.
         foreach (var name in new[] { "claude.exe", "claude.cmd" })
             foreach (var dir in dirs)
@@ -96,7 +109,45 @@ public static class PlanUsage
                 }
                 catch { }
             }
-        return null;
+        return DesktopAppExe(local);
+    }
+
+    // The Claude desktop app (Microsoft Store) keeps its own copy of Claude Code:
+    // %LOCALAPPDATA%\Claude-Data\<id>\claude-code\<version>\<hash>\claude.exe. Newest wins.
+    private static string? DesktopAppExe(string localAppData)
+    {
+        try
+        {
+            var root = Path.Combine(localAppData, "Claude-Data");
+            if (!Directory.Exists(root)) return null;
+            return Directory.EnumerateDirectories(root)
+                .Select(d => Path.Combine(d, "claude-code"))
+                .Where(Directory.Exists)
+                .SelectMany(d => Directory.EnumerateFiles(d, "claude.exe", SearchOption.AllDirectories))
+                .OrderByDescending(f => File.GetLastWriteTimeUtc(f))
+                .FirstOrDefault();
+        }
+        catch { return null; }
+    }
+
+    private static IEnumerable<string> SavedPath()
+    {
+        var result = new List<string>();
+        foreach (var (key, sub) in new[]
+        {
+            (Microsoft.Win32.Registry.CurrentUser, "Environment"),
+            (Microsoft.Win32.Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+        })
+        {
+            try
+            {
+                using var k = key.OpenSubKey(sub);
+                if (k?.GetValue("Path", "", Microsoft.Win32.RegistryValueOptions.DoNotExpandEnvironmentNames) is string raw)
+                    result.AddRange(Environment.ExpandEnvironmentVariables(raw).Split(';', StringSplitOptions.RemoveEmptyEntries));
+            }
+            catch { }
+        }
+        return result;
     }
 
     // .cmd shims cannot be started directly without a shell.

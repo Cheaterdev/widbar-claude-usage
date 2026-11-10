@@ -321,9 +321,10 @@ public sealed partial class MainPlugin
                 { State: PlanState.Error } p => L("Couldn't read plan limits ({0}). Using the token budgets below.", p.Message ?? ""),
                 _ => L("Checking…"),
             };
-            if (exe is null) state = L("Claude Code (claude.exe) was not found. Install it to sign in.");
-            signIn.Content = _plan?.State == PlanState.Ok ? L("Sign in again") : L("Sign in");
-            signIn.IsEnabled = exe is not null && !_signingIn;
+            var offerInstall = exe is null && _plan?.State != PlanState.Ok;
+            if (offerInstall) state = L("Claude Code was not found on this computer. Install it to see your real plan limits.");
+            signIn.Content = offerInstall ? L("Get Claude Code") : _plan?.State == PlanState.Ok ? L("Sign in again") : L("Sign in");
+            signIn.IsEnabled = offerInstall || (exe is not null && !_signingIn);
             status.Text = state;
 
             // Account name, read off the UI thread; shown above the status line.
@@ -335,6 +336,7 @@ public sealed partial class MainPlugin
         }
         signIn.Click += async (_, _) =>
         {
+            if (PlanUsage.ClaudeExe() is null) { OpenClaudeCodeSite(); return; }
             signIn.IsEnabled = false;
             status.Text = L("Waiting for sign-in in your browser…");
             await SignInFlowAsync();
@@ -363,6 +365,9 @@ public sealed partial class MainPlugin
             Toggle(draft.ShowFlyoutTime, v => draft.ShowFlyoutTime = v)));
         page.Children.Add(Row("", L("Pace"), L("Show whether you are ahead of, on, or behind pace for the window."),
             Toggle(draft.ShowPace, v => draft.ShowPace = v)));
+        page.Children.Add(Row("", L("Hide footer"),
+            L("Hide the notes at the bottom of the flyout. By hiding them you confirm that you know this is an unofficial widget, not affiliated with Anthropic, and that costs are estimates, not your bill."),
+            Toggle(draft.HideFooter, v => draft.HideFooter = v)));
 
         // ---- Colours ----
         page.Children.Add(Section(L("Colours"), L("Gauges turn amber, then red, as usage climbs.")));
@@ -399,6 +404,28 @@ public sealed partial class MainPlugin
             Number(draft.WeekLimitM, 0.1, 10000, 1, v => draft.WeekLimitM = v)));
         page.Children.Add(Row("", L("Daily budget"), L("Million tokens, for the Today ring when not signed in."),
             Number(draft.DayLimitM, 0.1, 1000, 0.5, v => draft.DayLimitM = v)));
+
+        // ---- About ----
+        page.Children.Add(Section(L("About"), L("Claude Usage is open source. Found a bug or have an idea? Tell me on GitHub.")));
+        Button LinkButton(string text, string url)
+        {
+            var b = new Button { Content = text };
+            b.Click += (_, _) => OpenUrl(url);
+            return b;
+        }
+        page.Children.Add(Row("", L("Report an issue"), L("Something broken or looking wrong."), LinkButton(L("Open GitHub issues"), RepoUrl + "/issues/new")));
+        page.Children.Add(Row("", L("Suggest an idea"), L("A feature you would like to see."), LinkButton(L("Share an idea"), RepoUrl + "/issues/new")));
+        page.Children.Add(Row("", L("Source code"), RepoUrl.Replace("https://", ""), LinkButton(L("View on GitHub"), RepoUrl)));
+
+        // ---- Disclaimer & privacy ----
+        page.Children.Add(Section(L("Disclaimer and privacy"), ""));
+        foreach (var para in new[]
+        {
+            L("Claude Usage is an unofficial, independent project. It is not made, endorsed or supported by Anthropic. \"Claude\" and \"Claude Code\" are trademarks of Anthropic, PBC, used here only to say what this widget works with."),
+            L("Privacy: your usage is read from files on this computer. To show your real limits, your Claude Code sign-in token is sent only to Anthropic (api.anthropic.com); it is never stored, logged or shown. The optional shared folder holds only token counts per model and time, never your prompts or code. There is no analytics or telemetry."),
+            L("Provided as is, without warranty. It relies on a Claude endpoint that is not officially documented and may change. Costs are estimates, not your bill."),
+        })
+            page.Children.Add(new TextBlock { Text = para, FontSize = 12, Opacity = 0.7, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 6) });
 
         RefreshPreview();
         return new ScrollViewer { Content = page };

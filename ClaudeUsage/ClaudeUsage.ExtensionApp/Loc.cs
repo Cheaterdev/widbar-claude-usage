@@ -228,6 +228,67 @@ internal static class Loc
         R("Claude Code's session logs. Leave empty for the default.", "Журнали сесій Claude Code. Залиште порожнім для значення за замовчуванням.",
             "Sitzungsprotokolle von Claude Code. Leer lassen für den Standard.", "Registros de sesión de Claude Code. Déjalo vacío para el valor predeterminado.", "Journaux de session de Claude Code. Laissez vide pour la valeur par défaut.", "Log di sessione di Claude Code. Lascia vuoto per il valore predefinito.");
         R("Browse…", "Огляд…", "Durchsuchen…", "Examinar…", "Parcourir…", "Sfoglia…");
+        R("Use Claude on other computers? Set a shared folder in Settings.",
+            "Користуєтесь Claude на інших комп'ютерах? Вкажіть спільну папку в налаштуваннях.",
+            "Claude auf anderen Computern? Lege in den Einstellungen einen gemeinsamen Ordner fest.",
+            "¿Usas Claude en otros equipos? Indica una carpeta compartida en Ajustes.",
+            "Vous utilisez Claude sur d'autres ordinateurs ? Définissez un dossier partagé dans les réglages.",
+            "Usi Claude su altri computer? Imposta una cartella condivisa nelle impostazioni.");
+        R("Get Claude Code", "Отримати Claude Code", "Claude Code herunterladen", "Obtener Claude Code", "Obtenir Claude Code", "Scarica Claude Code");
+        R("Claude Code was not found on this computer. Install it to show your real plan limits. Until then the rings use the budgets from settings.",
+            "Claude Code не знайдено на цьому комп'ютері. Встановіть його, щоб бачити справжні ліміти. До того кільця використовують бюджети з налаштувань.",
+            "Claude Code wurde auf diesem Computer nicht gefunden. Installiere es, um deine echten Limits zu sehen. Bis dahin nutzen die Ringe die Budgets aus den Einstellungen.",
+            "No se encontró Claude Code en este equipo. Instálalo para ver tus límites reales. Mientras tanto, los anillos usan los presupuestos de Ajustes.",
+            "Claude Code est introuvable sur cet ordinateur. Installez-le pour voir vos vraies limites. D'ici là, les anneaux utilisent les budgets des réglages.",
+            "Claude Code non trovato su questo computer. Installalo per vedere i tuoi limiti reali. Nel frattempo gli anelli usano i budget delle impostazioni.");
+        R("Claude Code was not found on this computer. Install it to see your real plan limits.",
+            "Claude Code не знайдено на цьому комп'ютері. Встановіть його, щоб бачити справжні ліміти.",
+            "Claude Code wurde auf diesem Computer nicht gefunden. Installiere es, um deine echten Limits zu sehen.",
+            "No se encontró Claude Code en este equipo. Instálalo para ver tus límites reales.",
+            "Claude Code est introuvable sur cet ordinateur. Installez-le pour voir vos vraies limites.",
+            "Claude Code non trovato su questo computer. Installalo per vedere i tuoi limiti reali.");
+        R("About", "Про програму", "Info", "Acerca de", "À propos", "Informazioni");
+        R("Claude Usage is open source. Found a bug or have an idea? Tell me on GitHub.",
+            "Claude Usage має відкритий код. Знайшли помилку чи маєте ідею? Напишіть на GitHub.",
+            "Claude Usage ist Open Source. Fehler gefunden oder eine Idee? Schreib mir auf GitHub.",
+            "Claude Usage es de código abierto. ¿Encontraste un error o tienes una idea? Cuéntamelo en GitHub.",
+            "Claude Usage est open source. Un bug ou une idée ? Dites-le moi sur GitHub.",
+            "Claude Usage è open source. Hai trovato un bug o hai un'idea? Scrivimi su GitHub.");
+        R("Report an issue", "Повідомити про проблему", "Problem melden", "Informar de un problema", "Signaler un problème", "Segnala un problema");
+        R("Something broken or looking wrong.", "Щось не працює або виглядає не так.", "Etwas ist kaputt oder sieht falsch aus.", "Algo no funciona o se ve mal.", "Quelque chose ne marche pas ou s'affiche mal.", "Qualcosa non funziona o appare sbagliato.");
+        R("Open GitHub issues", "Відкрити GitHub", "GitHub öffnen", "Abrir GitHub", "Ouvrir GitHub", "Apri GitHub");
+        R("Suggest an idea", "Запропонувати ідею", "Idee vorschlagen", "Sugerir una idea", "Proposer une idée", "Suggerisci un'idea");
+        R("A feature you would like to see.", "Функція, яку ви хотіли б бачити.", "Eine Funktion, die du dir wünschst.", "Una función que te gustaría ver.", "Une fonctionnalité que vous aimeriez voir.", "Una funzione che vorresti vedere.");
+        R("Share an idea", "Поділитися ідеєю", "Idee teilen", "Compartir una idea", "Partager une idée", "Condividi un'idea");
+        R("Source code", "Вихідний код", "Quellcode", "Código fuente", "Code source", "Codice sorgente");
+        R("View on GitHub", "Дивитися на GitHub", "Auf GitHub ansehen", "Ver en GitHub", "Voir sur GitHub", "Vedi su GitHub");
+        R("Disclaimer and privacy", "Застереження і приватність", "Haftungsausschluss und Datenschutz", "Aviso legal y privacidad", "Avertissement et confidentialité", "Avvertenze e privacy");
+        R("Unofficial: not affiliated with Anthropic.", "Неофіційний: не пов'язаний з Anthropic.", "Inoffiziell: nicht mit Anthropic verbunden.", "No oficial: sin relación con Anthropic.", "Non officiel : sans lien avec Anthropic.", "Non ufficiale: non affiliato ad Anthropic.");
+        R("Claude Usage is an unofficial, independent project. It is not made, endorsed or supported by Anthropic. \"Claude\" and \"Claude Code\" are trademarks of Anthropic, PBC, used here only to say what this widget works with.",
+            "Claude Usage — неофіційний незалежний проєкт. Його не створено, не схвалено і не підтримується Anthropic. «Claude» і «Claude Code» — торгові марки Anthropic, PBC, які тут вжито лише для опису того, з чим працює віджет.",
+            "Claude Usage ist ein inoffizielles, unabhängiges Projekt. Es wird nicht von Anthropic entwickelt, empfohlen oder unterstützt. „Claude“ und „Claude Code“ sind Marken von Anthropic, PBC und werden hier nur genannt, um zu beschreiben, womit dieses Widget arbeitet.",
+            "Claude Usage es un proyecto independiente y no oficial. No lo crea, respalda ni soporta Anthropic. «Claude» y «Claude Code» son marcas de Anthropic, PBC, usadas aquí solo para indicar con qué funciona este widget.",
+            "Claude Usage est un projet indépendant et non officiel. Il n'est ni créé, ni approuvé, ni pris en charge par Anthropic. « Claude » et « Claude Code » sont des marques d'Anthropic, PBC, utilisées ici uniquement pour indiquer avec quoi ce widget fonctionne.",
+            "Claude Usage è un progetto indipendente e non ufficiale. Non è creato, approvato né supportato da Anthropic. «Claude» e «Claude Code» sono marchi di Anthropic, PBC, usati qui solo per indicare con cosa funziona questo widget.");
+        R("Privacy: your usage is read from files on this computer. To show your real limits, your Claude Code sign-in token is sent only to Anthropic (api.anthropic.com); it is never stored, logged or shown. The optional shared folder holds only token counts per model and time, never your prompts or code. There is no analytics or telemetry.",
+            "Приватність: використання читається з файлів на цьому комп'ютері. Щоб показати справжні ліміти, токен входу Claude Code надсилається лише до Anthropic (api.anthropic.com); його ніколи не зберігають, не журналюють і не показують. Необов'язкова спільна папка містить лише кількість токенів за моделлю та часом, але не ваші запити чи код. Аналітики й телеметрії немає.",
+            "Datenschutz: Deine Nutzung wird aus Dateien auf diesem Computer gelesen. Für deine echten Limits wird dein Claude-Code-Anmeldetoken nur an Anthropic (api.anthropic.com) gesendet; er wird nie gespeichert, protokolliert oder angezeigt. Der optionale gemeinsame Ordner enthält nur Token-Zahlen pro Modell und Zeit, nie deine Prompts oder deinen Code. Es gibt keine Analyse oder Telemetrie.",
+            "Privacidad: tu uso se lee de archivos de este equipo. Para mostrar tus límites reales, tu token de inicio de sesión de Claude Code se envía solo a Anthropic (api.anthropic.com); nunca se guarda, registra ni muestra. La carpeta compartida opcional solo contiene recuentos de tokens por modelo y hora, nunca tus prompts ni tu código. No hay analíticas ni telemetría.",
+            "Confidentialité : votre utilisation est lue depuis des fichiers sur cet ordinateur. Pour afficher vos vraies limites, votre jeton de connexion Claude Code est envoyé uniquement à Anthropic (api.anthropic.com) ; il n'est jamais enregistré, journalisé ni affiché. Le dossier partagé facultatif ne contient que des nombres de jetons par modèle et par heure, jamais vos prompts ni votre code. Aucune analyse ni télémétrie.",
+            "Privacy: il tuo utilizzo viene letto da file su questo computer. Per mostrare i limiti reali, il token di accesso di Claude Code viene inviato solo ad Anthropic (api.anthropic.com); non viene mai salvato, registrato o mostrato. La cartella condivisa facoltativa contiene solo conteggi di token per modello e orario, mai i tuoi prompt o il tuo codice. Nessuna analisi o telemetria.");
+        R("Provided as is, without warranty. It relies on a Claude endpoint that is not officially documented and may change. Costs are estimates, not your bill.",
+            "Надається «як є», без гарантій. Використовує недокументований офіційно ендпоінт Claude, який може змінитися. Вартість — оцінка, а не ваш рахунок.",
+            "Bereitgestellt wie besehen, ohne Gewähr. Es nutzt einen nicht offiziell dokumentierten Claude-Endpunkt, der sich ändern kann. Kosten sind Schätzungen, nicht deine Rechnung.",
+            "Se ofrece tal cual, sin garantía. Usa un endpoint de Claude sin documentación oficial que puede cambiar. Los costes son estimaciones, no tu factura.",
+            "Fourni tel quel, sans garantie. Il s'appuie sur un point d'accès Claude non documenté officiellement, susceptible de changer. Les coûts sont des estimations, pas votre facture.",
+            "Fornito così com'è, senza garanzie. Usa un endpoint di Claude non documentato ufficialmente e che potrebbe cambiare. I costi sono stime, non la tua fattura.");
+        R("Hide footer", "Сховати нижній текст", "Fußzeile ausblenden", "Ocultar pie", "Masquer le pied de page", "Nascondi piè di pagina");
+        R("Hide the notes at the bottom of the flyout. By hiding them you confirm that you know this is an unofficial widget, not affiliated with Anthropic, and that costs are estimates, not your bill.",
+            "Сховати примітки внизу вікна. Ховаючи їх, ви підтверджуєте, що знаєте: це неофіційний віджет, не пов'язаний з Anthropic, а вартість — лише оцінка, а не ваш рахунок.",
+            "Die Hinweise am Ende des Fensters ausblenden. Damit bestätigst du, dass du weißt: Dies ist ein inoffizielles Widget ohne Verbindung zu Anthropic, und Kosten sind Schätzungen, nicht deine Rechnung.",
+            "Oculta las notas al final de la ventana. Al ocultarlas confirmas que sabes que es un widget no oficial, sin relación con Anthropic, y que los costes son estimaciones, no tu factura.",
+            "Masque les notes en bas de la fenêtre. En les masquant, vous confirmez savoir qu'il s'agit d'un widget non officiel, sans lien avec Anthropic, et que les coûts sont des estimations, pas votre facture.",
+            "Nasconde le note in fondo alla finestra. Nascondendole confermi di sapere che è un widget non ufficiale, non affiliato ad Anthropic, e che i costi sono stime, non la tua fattura.");
         R("All computers", "Усі комп'ютери", "Alle Computer", "Todos los equipos", "Tous les ordinateurs", "Tutti i computer");
         R("{0} (this PC)", "{0} (цей ПК)", "{0} (dieser PC)", "{0} (este equipo)", "{0} (cet ordinateur)", "{0} (questo PC)");
         R("Shared folder", "Спільна папка", "Gemeinsamer Ordner", "Carpeta compartida", "Dossier partagé", "Cartella condivisa");

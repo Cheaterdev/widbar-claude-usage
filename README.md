@@ -49,7 +49,7 @@ Out of the box, the rings use rough estimates. To show your **real** limits, the
 
 Settings shows which account is signed in (name, email and plan) so you can confirm the numbers are for the account you expect.
 
-If the sign-in button is greyed out, Claude Code was not found on this computer. Install it, then try again.
+If Claude Code was not found on this computer, the button changes to **Get Claude Code** and opens the official page. Install it, then try again.
 
 ## Settings
 
@@ -99,7 +99,7 @@ When more than one computer has reported usage, the flyout shows a picker (**All
 | --- | --- |
 | The widget is not in the WidBar catalog | Open **Layout** in WidBar and press **Refresh**. |
 | Rings show estimates, not real limits | Open the flyout or Settings and press **Sign in to Claude**. |
-| "Sign in" is greyed out | Claude Code is not installed or was not found. Install it, then reopen Settings. |
+| It says Claude Code was not found | Press **Get Claude Code**, install it, then reopen Settings. |
 | It says no usage was found | Use Claude Code once, or set the right folder in **Settings > Data > Claude data folder**. |
 | The numbers do not match Claude exactly | Wait for the next refresh. Plan limits are asked for at most every 5 minutes. |
 | Sign-in worked before but the rings are estimates again | Your sign-in expired. Press **Sign in again** in Settings. |

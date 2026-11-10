@@ -48,6 +48,7 @@ public sealed partial class MainPlugin :
         public bool ShowTimeLeft { get; set; } = true;
         public bool ShowFlyoutTime { get; set; } = true;
         public bool ShowPace { get; set; } = true;
+        public bool HideFooter { get; set; } = false;
         // Colour thresholds (percent used)
         public double WarnAt { get; set; } = 80;
         public double CritAt { get; set; } = 95;
@@ -187,6 +188,17 @@ public sealed partial class MainPlugin :
         finally { Interlocked.Exchange(ref _refreshing, 0); }
     }
 
+    private const string RepoUrl = "https://github.com/Cheaterdev/widbar-claude-usage";
+
+    private static void OpenUrl(string url)
+    {
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch { }
+    }
+
+    // Claude Code's official page (download and install instructions).
+    private static void OpenClaudeCodeSite() => OpenUrl("https://claude.com/claude-code");
+
     private void Recompute()
     {
         _snapshot = UsageReader.Aggregate(_buckets, _weekStart);
@@ -279,16 +291,8 @@ public sealed partial class MainPlugin :
             p.Add(new TextBlock { Text = L("Reading usage…"), Opacity = 0.6 });
             return;
         }
-        if (s.Messages30 == 0)
-        {
-            p.Add(new TextBlock
-            {
-                Text = L("No Claude Code usage found in the last 30 days.\nLooked in: {0}", _settings.DataFolder ?? UsageReader.DefaultRoot),
-                TextWrapping = TextWrapping.Wrap,
-                Opacity = 0.6,
-            });
-            return;
-        }
+        // No local usage: everything still shows (limits, zero cost, empty history) and a note goes in the footer.
+        var noUsage = s.Messages30 == 0;
 
         var v = _view ?? s;
 
@@ -456,15 +460,24 @@ public sealed partial class MainPlugin :
 
         if (_plan?.State == PlanState.NeedsSignIn || (_plan?.State == PlanState.Error && _plan.Limits is null))
         {
+            var missing = _plan.State == PlanState.NeedsSignIn && PlanUsage.ClaudeExe() is null;
             var msg = new TextBlock
             {
-                Text = _plan.State == PlanState.NeedsSignIn
+                Text = missing
+                    ? L("Claude Code was not found on this computer. Install it to show your real plan limits. Until then the rings use the budgets from settings.")
+                    : _plan.State == PlanState.NeedsSignIn
                     ? L("Sign in to Claude to show your real plan limits. Until then the rings use the budgets from settings.")
                     : L("Couldn't read plan limits ({0}). Showing local estimates.", _plan.Message ?? ""),
                 TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.7,
             };
             p.Add(msg);
-            if (_plan.State == PlanState.NeedsSignIn)
+            if (missing)
+            {
+                var get = new Button { Content = L("Get Claude Code") };
+                get.Click += (_, _) => OpenClaudeCodeSite();
+                p.Add(get);
+            }
+            else if (_plan.State == PlanState.NeedsSignIn)
             {
                 var btn = new Button
                 {
@@ -473,8 +486,6 @@ public sealed partial class MainPlugin :
                 };
                 btn.Click += async (_, _) => await SignInFlowAsync();
                 p.Add(btn);
-                if (PlanUsage.ClaudeExe() is null)
-                    p.Add(new TextBlock { Text = L("Claude Code (claude.exe) was not found; install it to sign in."), FontSize = 11, Opacity = 0.6 });
             }
         }
 
@@ -485,19 +496,29 @@ public sealed partial class MainPlugin :
             days.Children.Add(BarRow(day.ToString("ddd d", Loc.Culture), t.Headline(cache), max));
         p.Add(days);
 
+        if (v.ByModel30.Count > 0)
+        {
         p.Add(SectionHeader(L("By model · 30 days (est. cost)")));
         var mmax = Math.Max(1, v.ByModel30.Select(m => m.Totals.Headline(cache)).DefaultIfEmpty(0).Max());
         var models = new StackPanel { Spacing = 6 };
         foreach (var (model, t) in v.ByModel30.Take(6))
             models.Children.Add(BarRow(UsageReader.FriendlyModel(model), t.Headline(cache), mmax, UsageReader.Money(t.Cost)));
         p.Add(models);
+        }
 
         var note = cache
             ? L("Totals include cache reads.")
             : L("Cache reads not counted ({0} in 30 days).", UsageReader.Compact(v.Last30Days.CacheRead));
-        p.Add(new TextBlock
+        var footer = L("{0} Costs = tokens x Anthropic's published API prices, not your plan bill. Source: Claude Code logs. Updated {1}.", note, s.GeneratedAt.ToString("t", Loc.Culture));
+        footer += "\n" + L("Unofficial: not affiliated with Anthropic.");
+        var noUsageNote = L("No Claude Code usage found in the last 30 days.\nLooked in: {0}", _settings.DataFolder ?? UsageReader.DefaultRoot)
+            + "\n" + L("Use Claude on other computers? Set a shared folder in Settings.");
+        // With the footer hidden only the troubleshooting hint for missing usage is kept.
+        if (_settings.HideFooter) footer = noUsage ? noUsageNote : "";
+        else if (noUsage) footer = noUsageNote + "\n\n" + footer;
+        if (footer.Length > 0) p.Add(new TextBlock
         {
-            Text = L("{0} Costs = tokens x Anthropic's published API prices, not your plan bill. Source: Claude Code logs. Updated {1}.", note, s.GeneratedAt.ToString("t", Loc.Culture)),
+            Text = footer,
             FontSize = 11, Opacity = 0.5, TextWrapping = TextWrapping.Wrap,
         });
     }
