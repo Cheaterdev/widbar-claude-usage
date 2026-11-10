@@ -213,8 +213,8 @@ public sealed partial class MainPlugin :
 
     // Today as a share of the week. Today's part of the weekly percentage is the
     // weekly percentage split by cost (tokens inside the current weekly window).
-    // The ring shows that against today's allowance: what is left of the week at
-    // the start of today, spread over the days that remain. Null without a sign-in.
+    // The ring shows that against today's allowance: what is left of the week right now,
+    // spread over the days that remain. Null without a sign-in.
     private double? TodayShare(out double weekPart, out double allowance)
     {
         weekPart = 0; allowance = 0;
@@ -222,7 +222,8 @@ public sealed partial class MainPlugin :
         var share = ww.Cost > 0 ? tw.Cost / ww.Cost : ww.Headline(false) > 0 ? (double)tw.Headline(false) / ww.Headline(false) : 0;
         weekPart = pl.WeekPct * Math.Clamp(share, 0, 1);
         var daysLeft = Math.Max(1, Math.Ceiling((reset - DateTimeOffset.Now).TotalDays));
-        allowance = Math.Max(0.1, (100 - (pl.WeekPct - weekPart)) / daysLeft);
+        // Based on what is left right now, so it shrinks as the week is used up.
+        allowance = Math.Max(0.1, (100 - pl.WeekPct) / daysLeft);
         return weekPart / allowance * 100;
     }
 

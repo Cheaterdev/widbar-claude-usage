@@ -82,12 +82,29 @@ public static class PlanUsage
     public static string? ClaudeExe()
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var candidates = new List<string> { Path.Combine(home, ".local", "bin", "claude.exe") };
-        foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))
-        {
-            try { candidates.Add(Path.Combine(dir.Trim(), "claude.exe")); } catch { }
-        }
-        return candidates.FirstOrDefault(File.Exists);
+        // Built from the profile folder: in a packaged app %APPDATA% can point at the app's private copy.
+        var dirs = new List<string> { Path.Combine(home, ".local", "bin"), Path.Combine(home, "AppData", "Roaming", "npm") };
+        dirs.AddRange((Environment.GetEnvironmentVariable("PATH") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries));
+        // The native installer gives claude.exe; an npm install gives claude.cmd.
+        foreach (var name in new[] { "claude.exe", "claude.cmd" })
+            foreach (var dir in dirs)
+            {
+                try
+                {
+                    var f = Path.Combine(dir.Trim().Trim('"'), name);
+                    if (File.Exists(f)) return f;
+                }
+                catch { }
+            }
+        return null;
+    }
+
+    // .cmd shims cannot be started directly without a shell.
+    private static ProcessStartInfo Start(string exe, string args, bool shell)
+    {
+        if (exe.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase))
+            return new ProcessStartInfo("cmd.exe", $"/c \"\"{exe}\" {args}\"") { UseShellExecute = shell, CreateNoWindow = !shell };
+        return new ProcessStartInfo(exe, args) { UseShellExecute = shell, CreateNoWindow = !shell };
     }
 
     // Opens Claude Code's own sign-in (browser authorization). Completes when
@@ -98,7 +115,7 @@ public static class PlanUsage
         if (exe is null) return false;
         try
         {
-            using var p = Process.Start(new ProcessStartInfo(exe, "auth login") { UseShellExecute = true });
+            using var p = Process.Start(Start(exe, "auth login", true));
             if (p is null) return false;
             await p.WaitForExitAsync();
             return true;
@@ -114,13 +131,10 @@ public static class PlanUsage
         if (exe is null) return;
         try
         {
-            using var p = Process.Start(new ProcessStartInfo(exe, "auth status")
-            {
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            });
+            var psi = Start(exe, "auth status", false);
+            psi.RedirectStandardOutput = true;
+            psi.RedirectStandardError = true;
+            using var p = Process.Start(psi);
             if (p is null) return;
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
             await p.WaitForExitAsync(cts.Token);
