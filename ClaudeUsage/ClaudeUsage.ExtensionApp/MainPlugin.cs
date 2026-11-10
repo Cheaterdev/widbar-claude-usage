@@ -41,6 +41,9 @@ public sealed partial class MainPlugin :
         public bool ShowWeek { get; set; } = true;
         public bool ShowDay { get; set; } = false;
         public bool ShowLabels { get; set; } = true;
+        public bool ShowTimeLeft { get; set; } = true;
+        public bool ShowFlyoutTime { get; set; } = true;
+        public bool ShowPace { get; set; } = true;
         // Colour thresholds (percent used)
         public double WarnAt { get; set; } = 80;
         public double CritAt { get; set; } = 95;
@@ -158,8 +161,6 @@ public sealed partial class MainPlugin :
         {
             var folder = _settings.DataFolder;
             await Pricing.EnsureAsync();
-            var snap = await Task.Run(() => UsageReader.Read(folder));
-            _snapshot = snap;
             // Real plan limits: at most every 5 minutes, and never while a sign-in is open.
             if (!_signingIn && DateTime.UtcNow - _planFetchedAt > TimeSpan.FromMinutes(Math.Max(5, _settings.RefreshMinutes)))
             {
@@ -168,7 +169,11 @@ public sealed partial class MainPlugin :
                 // A transient error keeps the last good numbers on screen.
                 if (plan.State != PlanState.Error || _plan?.State != PlanState.Ok) _plan = plan;
             }
-            _dispatcher?.TryEnqueue(() => { RenderPreview(); RenderFlyout(); });
+            // The weekly window started 7 days before it resets.
+            var weekStart = _plan?.Limits?.WeekResets?.ToLocalTime().DateTime.AddDays(-7);
+            var snap = await Task.Run(() => UsageReader.Read(folder, weekStart));
+            _snapshot = snap;
+            _dispatcher?.TryEnqueue(() => { if (Loc.Refresh()) RebuildPreview(); RenderPreview(); RenderFlyout(); });
         }
         catch { /* keep showing the last snapshot */ }
         finally { Interlocked.Exchange(ref _refreshing, 0); }
@@ -183,8 +188,8 @@ public sealed partial class MainPlugin :
             foreach (var g in new[] { _g1, _g2, _g3 }) if (g is not null) g.Text.Text = "…";
             return;
         }
-        _g1?.Set(v.Session, ArcRing.CoralHot);
-        _g2?.Set(v.Week, ArcRing.BlueHot);
+        _g1?.Set(v.Session, ArcRing.CoralHot, _plan?.Limits?.SessionResets);
+        _g2?.Set(v.Week, ArcRing.BlueHot, _plan?.Limits?.WeekResets);
         _g3?.Set(v.Day, ArcRing.TealHot);
     }
 
@@ -201,8 +206,24 @@ public sealed partial class MainPlugin :
             session = Percent(_snapshot!.Last5Hours, st.SessionLimitM, st.IncludeCacheReads);
             week = Percent(_snapshot.Last7Days, st.WeekLimitM, st.IncludeCacheReads);
         }
-        var day = _snapshot is null ? 0 : Percent(_snapshot.Today, st.DayLimitM, st.IncludeCacheReads);
+        var day = TodayShare(out _, out _) is { } share ? share
+            : _snapshot is null ? 0 : Percent(_snapshot.Today, st.DayLimitM, st.IncludeCacheReads);
         return (session, week, day);
+    }
+
+    // Today as a share of the week. Today's part of the weekly percentage is the
+    // weekly percentage split by cost (tokens inside the current weekly window).
+    // The ring shows that against today's allowance: what is left of the week at
+    // the start of today, spread over the days that remain. Null without a sign-in.
+    private double? TodayShare(out double weekPart, out double allowance)
+    {
+        weekPart = 0; allowance = 0;
+        if (_plan?.Limits is not { WeekResets: { } reset } pl || _snapshot is not { WeekWindow: { } ww, TodayInWindow: { } tw }) return null;
+        var share = ww.Cost > 0 ? tw.Cost / ww.Cost : ww.Headline(false) > 0 ? (double)tw.Headline(false) / ww.Headline(false) : 0;
+        weekPart = pl.WeekPct * Math.Clamp(share, 0, 1);
+        var daysLeft = Math.Max(1, Math.Ceiling((reset - DateTimeOffset.Now).TotalDays));
+        allowance = Math.Max(0.1, (100 - (pl.WeekPct - weekPart)) / daysLeft);
+        return weekPart / allowance * 100;
     }
 
     private static void ApplyThresholds(Settings st)
@@ -221,6 +242,8 @@ public sealed partial class MainPlugin :
         await RefreshAsync();
     }
 
+    private static string L(string key, params object[] args) => Loc.T(key, args);
+
     private double Percent(Totals t, double limitM) => Percent(t, limitM, _settings.IncludeCacheReads);
 
     private static double Percent(Totals t, double limitM, bool cache) =>
@@ -233,18 +256,18 @@ public sealed partial class MainPlugin :
         var p = _flyoutRoot.Children;
         p.Clear();
 
-        p.Add(new TextBlock { Text = "Claude usage", FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        p.Add(new TextBlock { Text = L("Claude usage"), FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
 
         if (_snapshot is not { } s)
         {
-            p.Add(new TextBlock { Text = "Reading usage…", Opacity = 0.6 });
+            p.Add(new TextBlock { Text = L("Reading usage…"), Opacity = 0.6 });
             return;
         }
         if (s.Messages30 == 0)
         {
             p.Add(new TextBlock
             {
-                Text = "No Claude Code usage found in the last 30 days.\nLooked in: " + (_settings.DataFolder ?? UsageReader.DefaultRoot),
+                Text = L("No Claude Code usage found in the last 30 days.\nLooked in: {0}", _settings.DataFolder ?? UsageReader.DefaultRoot),
                 TextWrapping = TextWrapping.Wrap,
                 Opacity = 0.6,
             });
@@ -252,8 +275,8 @@ public sealed partial class MainPlugin :
         }
 
         var row = new Grid { ColumnSpacing = 8 };
-        for (var i = 0; i < 3; i++) row.ColumnDefinitions.Add(new ColumnDefinition());
-        void Ring(int col, string label, double pct, string subtitle, Windows.UI.Color color)
+        void Ring(int col, string label, double pct, string subtitle, Windows.UI.Color color,
+                  DateTimeOffset? resets = null, TimeSpan window = default)
         {
             var ring = new ArcRing(76, 8);
             ring.SetValue(pct, color);
@@ -275,6 +298,7 @@ public sealed partial class MainPlugin :
             {
                 Text = label, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, FontSize = 12,
                 HorizontalAlignment = HorizontalAlignment.Center,
+                TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap,
                 Foreground = new SolidColorBrush(ArcRing.Warn(color, pct)),
             });
             body.Children.Add(new TextBlock
@@ -283,26 +307,69 @@ public sealed partial class MainPlugin :
                 FontSize = 11, Opacity = 0.6, HorizontalAlignment = HorizontalAlignment.Center,
                 TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap,
             });
+            if (resets is { } rs && window > TimeSpan.Zero && (_settings.ShowFlyoutTime || _settings.ShowPace))
+            {
+                // Thin bar: how much of the limit window has already passed.
+                var elapsed = Math.Clamp(1 - (rs - DateTimeOffset.Now).TotalSeconds / window.TotalSeconds, 0, 1);
+                var bar = new Grid { Width = 72, Height = 3, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 2, 0, 0) };
+                bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(elapsed, 0.0001), GridUnitType.Star) });
+                bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(1 - elapsed, 0.0001), GridUnitType.Star) });
+                var track = new Microsoft.UI.Xaml.Controls.Border
+                {
+                    CornerRadius = new CornerRadius(1.5),
+                    Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x60, 0x80, 0x80, 0x80)),
+                };
+                Grid.SetColumnSpan(track, 2);
+                bar.Children.Add(track);
+                var fill = new Microsoft.UI.Xaml.Controls.Border { CornerRadius = new CornerRadius(1.5), Background = new SolidColorBrush(color) };
+                bar.Children.Add(fill);
+                if (_settings.ShowFlyoutTime) body.Children.Insert(body.Children.Count - 1, bar);
+
+                // Pace: usage so far against the share of the window that has passed.
+                if (_settings.ShowPace)
+                {
+                    var diff = pct - elapsed * 100;
+                    var (paceText, paceColor) = Math.Abs(diff) < 5 ? (L("On pace"), ArcRing.Teal)
+                        : diff > 0 ? (L("{0}% ahead", $"{diff:0}"), ArcRing.Amber)
+                        : (L("{0}% behind", $"{-diff:0}"), ArcRing.Blue);
+                    body.Children.Insert(body.Children.Count - 1, new TextBlock
+                    {
+                        Text = paceText, FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        Foreground = new SolidColorBrush(paceColor),
+                    });
+                }
+            }
             var card = Card(body);
-            Grid.SetColumn(card, col);
+            row.ColumnDefinitions.Add(new ColumnDefinition());
+            Grid.SetColumn(card, row.ColumnDefinitions.Count - 1);
             row.Children.Add(card);
         }
         string Local(Totals t, double limitM) => $"{UsageReader.Compact(t.Headline(cache))} / {limitM:0.##}M";
-        string Reset(DateTimeOffset? r) => r is { } v ? "Resets " + v.ToLocalTime().ToString("ddd h:mm tt") : "";
+        string Reset(DateTimeOffset? r)
+        {
+            if (r is not { } v || !_settings.ShowFlyoutTime) return "";
+            var local = v.ToLocalTime();
+            var when = local.Date == DateTime.Today ? local.ToString("t", Loc.Culture) : local.ToString("ddd", Loc.Culture) + " " + local.ToString("t", Loc.Culture);
+            return L("{0} left", Left(v)) + "\n" + L("Resets {0}", when);
+        }
         if (_plan?.Limits is { } pl)
         {
-            Ring(0, "5-hour limit", pl.SessionPct, Reset(pl.SessionResets), ArcRing.Coral);
-            Ring(1, "Weekly limit", pl.WeekPct, Reset(pl.WeekResets), ArcRing.Blue);
+            if (pl.HasSession) Ring(0, L("5-hour limit"), pl.SessionPct, Reset(pl.SessionResets), ArcRing.Coral, pl.SessionResets, TimeSpan.FromHours(5));
+            if (pl.HasWeek) Ring(1, L("Weekly limit"), pl.WeekPct, Reset(pl.WeekResets), ArcRing.Blue, pl.WeekResets, TimeSpan.FromDays(7));
         }
         else
         {
-            Ring(0, "5 hours", Percent(s.Last5Hours, _settings.SessionLimitM), Local(s.Last5Hours, _settings.SessionLimitM), ArcRing.Coral);
-            Ring(1, "7 days", Percent(s.Last7Days, _settings.WeekLimitM), Local(s.Last7Days, _settings.WeekLimitM), ArcRing.Blue);
+            Ring(0, L("5 hours"), Percent(s.Last5Hours, _settings.SessionLimitM), Local(s.Last5Hours, _settings.SessionLimitM), ArcRing.Coral);
+            Ring(1, L("7 days"), Percent(s.Last7Days, _settings.WeekLimitM), Local(s.Last7Days, _settings.WeekLimitM), ArcRing.Blue);
         }
-        Ring(2, "Today", Percent(s.Today, _settings.DayLimitM), Local(s.Today, _settings.DayLimitM), ArcRing.Teal);
+        if (TodayShare(out var weekPart, out var allowance) is { } dayPct)
+            Ring(2, L("Today"), dayPct, L("{0}% of weekly limit", $"{weekPart:0.#}") + "\n" + L("Allowance {0}% / day", $"{allowance:0.#}"), ArcRing.Teal);
+        else
+            Ring(2, L("Today"), Percent(s.Today, _settings.DayLimitM), Local(s.Today, _settings.DayLimitM), ArcRing.Teal);
         p.Add(row);
 
-        p.Add(SectionHeader("Estimated API cost"));
+        p.Add(SectionHeader(L("Estimated API cost")));
         var costs = new Grid { ColumnSpacing = 8 };
         for (var i = 0; i < 3; i++) costs.ColumnDefinitions.Add(new ColumnDefinition());
         void Cost(int col, string label, Totals t)
@@ -313,25 +380,51 @@ public sealed partial class MainPlugin :
             // Actual tokens behind the estimate (cache reads only if enabled in settings).
             body.Children.Add(new TextBlock
             {
-                Text = $"{UsageReader.Compact(t.Headline(cache))} tokens",
+                Text = L("{0} tokens", UsageReader.Compact(t.Headline(cache))),
                 FontSize = 11, Opacity = 0.6, HorizontalAlignment = HorizontalAlignment.Center,
             });
             var card = Card(body);
             Grid.SetColumn(card, col);
             costs.Children.Add(card);
         }
-        Cost(0, "Today", s.Today);
-        Cost(1, "7 days", s.Last7Days);
-        Cost(2, "30 days", s.Last30Days);
+        Cost(0, L("Today"), s.Today);
+        Cost(1, L("7 days"), s.Last7Days);
+        Cost(2, L("30 days"), s.Last30Days);
         p.Add(costs);
+
+        // Extra usage credits (a monthly spending cap on top of the plan), when enabled.
+        if (_plan?.Limits?.Extra is { Enabled: true, Limit: { } creditCap } credits)
+        {
+            var spent = credits.Used ?? 0;
+            var leftCents = Math.Max(0, creditCap - spent);
+            var usedPct = creditCap > 0 ? Math.Clamp(spent / creditCap * 100, 0, 100) : 0;
+            p.Add(SectionHeader(L("Extra usage credits")));
+            var cbody = new StackPanel { Spacing = 6, HorizontalAlignment = HorizontalAlignment.Stretch };
+            cbody.Children.Add(new TextBlock
+            {
+                Text = L("{0} left", UsageReader.Money(leftCents / 100.0)),
+                FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center,
+            });
+            cbody.Children.Add(new ProgressBar
+            {
+                Minimum = 0, Maximum = 100, Value = usedPct, Height = 6,
+                Foreground = new SolidColorBrush(ArcRing.Warn(ArcRing.Teal, usedPct)),
+            });
+            cbody.Children.Add(new TextBlock
+            {
+                Text = L("of {0} · used {1}", UsageReader.Money(creditCap / 100.0), UsageReader.Money(spent / 100.0)),
+                FontSize = 11, Opacity = 0.6, HorizontalAlignment = HorizontalAlignment.Center,
+            });
+            p.Add(Card(cbody));
+        }
 
         if (_plan?.State == PlanState.NeedsSignIn || (_plan?.State == PlanState.Error && _plan.Limits is null))
         {
             var msg = new TextBlock
             {
                 Text = _plan.State == PlanState.NeedsSignIn
-                    ? "Sign in to Claude to show your real plan limits. Until then the rings use the budgets from settings."
-                    : $"Couldn't read plan limits ({_plan.Message}). Showing local estimates.",
+                    ? L("Sign in to Claude to show your real plan limits. Until then the rings use the budgets from settings.")
+                    : L("Couldn't read plan limits ({0}). Showing local estimates.", _plan.Message ?? ""),
                 TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.7,
             };
             p.Add(msg);
@@ -339,24 +432,24 @@ public sealed partial class MainPlugin :
             {
                 var btn = new Button
                 {
-                    Content = _signingIn ? "Waiting for sign-in…" : "Sign in to Claude",
+                    Content = _signingIn ? L("Waiting for sign-in…") : L("Sign in to Claude"),
                     IsEnabled = !_signingIn && PlanUsage.ClaudeExe() is not null,
                 };
                 btn.Click += async (_, _) => await SignInFlowAsync();
                 p.Add(btn);
                 if (PlanUsage.ClaudeExe() is null)
-                    p.Add(new TextBlock { Text = "Claude Code (claude.exe) was not found; install it to sign in.", FontSize = 11, Opacity = 0.6 });
+                    p.Add(new TextBlock { Text = L("Claude Code (claude.exe) was not found; install it to sign in."), FontSize = 11, Opacity = 0.6 });
             }
         }
 
-        p.Add(SectionHeader("Last 7 days"));
+        p.Add(SectionHeader(L("Last 7 days")));
         var max = Math.Max(1, s.Daily7.Max(d => d.Totals.Headline(cache)));
         var days = new StackPanel { Spacing = 6 };
         foreach (var (day, t) in s.Daily7)
-            days.Children.Add(BarRow(day.ToString("ddd d"), t.Headline(cache), max));
+            days.Children.Add(BarRow(day.ToString("ddd d", Loc.Culture), t.Headline(cache), max));
         p.Add(days);
 
-        p.Add(SectionHeader("By model · 30 days (est. cost)"));
+        p.Add(SectionHeader(L("By model · 30 days (est. cost)")));
         var mmax = Math.Max(1, s.ByModel30.Max(m => m.Totals.Headline(cache)));
         var models = new StackPanel { Spacing = 6 };
         foreach (var (model, t) in s.ByModel30.Take(6))
@@ -364,11 +457,11 @@ public sealed partial class MainPlugin :
         p.Add(models);
 
         var note = cache
-            ? "Totals include cache reads."
-            : $"Cache reads not counted ({UsageReader.Compact(s.Last30Days.CacheRead)} in 30 days).";
+            ? L("Totals include cache reads.")
+            : L("Cache reads not counted ({0} in 30 days).", UsageReader.Compact(s.Last30Days.CacheRead));
         p.Add(new TextBlock
         {
-            Text = $"{note} Costs = tokens x Anthropic's published API prices, not your plan bill. Source: Claude Code logs. Updated {s.GeneratedAt:HH:mm}.",
+            Text = L("{0} Costs = tokens x Anthropic's published API prices, not your plan bill. Source: Claude Code logs. Updated {1}.", note, s.GeneratedAt.ToString("t", Loc.Culture)),
             FontSize = 11, Opacity = 0.5, TextWrapping = TextWrapping.Wrap,
         });
     }

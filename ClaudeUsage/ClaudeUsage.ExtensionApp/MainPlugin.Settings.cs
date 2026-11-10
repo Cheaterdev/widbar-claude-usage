@@ -10,13 +10,26 @@ public sealed partial class MainPlugin
 {
     // ---- Taskbar gauges (shared by the taskbar preview and the settings preview) ----
 
-    private sealed record PreviewGauge(ArcRing Ring, TextBlock Text, UIElement View)
+    private sealed record PreviewGauge(ArcRing Ring, TextBlock Text, UIElement View, TextBlock? Label, string Name, bool TimeLeft)
     {
-        public void Set(double pct, Windows.UI.Color color)
+        // With "time left" on and a known reset time, the small label shows the
+        // countdown (2h 14m) instead of the name (5h).
+        public void Set(double pct, Windows.UI.Color color, DateTimeOffset? resets = null)
         {
             Ring.SetValue(pct, color);
             Text.Text = $"{pct:0}%";
+            if (Label is not null)
+                Label.Text = TimeLeft && resets is { } r ? Left(r) : Name;
         }
+    }
+
+    private static string Left(DateTimeOffset reset)
+    {
+        var t = reset - DateTimeOffset.Now;
+        if (t <= TimeSpan.Zero) return Loc.T(L("now"));
+        if (t.TotalDays >= 1) return Loc.T("{0}d {1}h", (int)t.TotalDays, t.Hours);
+        if (t.TotalHours >= 1) return Loc.T("{0}h {1}m", (int)t.TotalHours, t.Minutes);
+        return Loc.T("{0}m", Math.Max(1, t.Minutes));
     }
 
     // Slot width: padding + 58 px per gauge + 10 px between gauges.
@@ -24,13 +37,16 @@ public sealed partial class MainPlugin
     {
         var n = (st.ShowSession ? 1 : 0) + (st.ShowWeek ? 1 : 0) + (st.ShowDay ? 1 : 0);
         if (n == 0) return 80; // just the two-line name
-        return 24 + n * 58 + (n - 1) * 10;
+        // Countdown labels (2h 14m) can be wider than the percentage, so those gauges get 6 px more.
+        var wide = st.ShowLabels && st.ShowTimeLeft ? (st.ShowSession ? 1 : 0) + (st.ShowWeek ? 1 : 0) : 0;
+        return 24 + n * 58 + wide * 6 + (n - 1) * 10;
     }
 
     // A ring beside a two-line label like the CPU widget: small coloured name on
     // top, value below. Metrics were measured from the CPU and Pomodoro widgets.
-    private static PreviewGauge BuildGauge(string name, Windows.UI.Color color, bool labels)
+    private static PreviewGauge BuildGauge(string name, Windows.UI.Color color, bool labels, bool timeLeft)
     {
+        TextBlock? nameLabel = null;
         // 22 px outer diameter, 2.5 px stroke.
         var ring = new ArcRing(22, 2.5) { VerticalAlignment = VerticalAlignment.Center };
         ring.SetValue(0, color);
@@ -57,6 +73,7 @@ public sealed partial class MainPlugin
                 LineHeight = 11,
                 RenderTransform = new TranslateTransform { Y = -1 }, // 1 px up, no layout change
             };
+            nameLabel = label;
             var lines = new StackPanel { Spacing = 0, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 1, 0, 0) };
             lines.Children.Add(label);
             lines.Children.Add(text);
@@ -68,7 +85,7 @@ public sealed partial class MainPlugin
             view.Children.Add(ring);
             view.Children.Add(text);
         }
-        return new PreviewGauge(ring, text, view);
+        return new PreviewGauge(ring, text, view, nameLabel, name, timeLeft);
     }
 
     private static (StackPanel Row, PreviewGauge? G1, PreviewGauge? G2, PreviewGauge? G3) BuildGaugeRow(Settings st)
@@ -81,14 +98,14 @@ public sealed partial class MainPlugin
             VerticalAlignment = VerticalAlignment.Center,
         };
         PreviewGauge? g1 = null, g2 = null, g3 = null;
-        if (st.ShowSession) { g1 = BuildGauge("5h", ArcRing.CoralHot, st.ShowLabels); row.Children.Add(g1.View); }
-        if (st.ShowWeek) { g2 = BuildGauge("Week", ArcRing.BlueHot, st.ShowLabels); row.Children.Add(g2.View); }
-        if (st.ShowDay) { g3 = BuildGauge("Today", ArcRing.TealHot, st.ShowLabels); row.Children.Add(g3.View); }
+        if (st.ShowSession) { g1 = BuildGauge(L("5h"), ArcRing.CoralHot, st.ShowLabels, st.ShowTimeLeft); row.Children.Add(g1.View); }
+        if (st.ShowWeek) { g2 = BuildGauge(L("Week"), ArcRing.BlueHot, st.ShowLabels, st.ShowTimeLeft); row.Children.Add(g2.View); }
+        if (st.ShowDay) { g3 = BuildGauge(L("Today (short)"), ArcRing.TealHot, st.ShowLabels, false); row.Children.Add(g3.View); }
         if (g1 is null && g2 is null && g3 is null)
         {
             // No gauge selected: just the name, on two lines.
             var name = new StackPanel { Spacing = 0, VerticalAlignment = VerticalAlignment.Center };
-            foreach (var word in new[] { "Claude", "Usage" })
+            foreach (var word in new[] { L("Claude"), L("Usage") })
                 name.Children.Add(new TextBlock
                 {
                     Text = word,
@@ -184,19 +201,19 @@ public sealed partial class MainPlugin
             var (row, g1, g2, g3) = BuildGaugeRow(draft);
             // Real numbers when known, otherwise sample values so the colours show.
             var p = Percents(draft) ?? (42, 18, 30);
-            g1?.Set(p.Session, ArcRing.CoralHot);
-            g2?.Set(p.Week, ArcRing.BlueHot);
+            g1?.Set(p.Session, ArcRing.CoralHot, _plan?.Limits?.SessionResets ?? DateTimeOffset.Now.AddMinutes(134));
+            g2?.Set(p.Week, ArcRing.BlueHot, _plan?.Limits?.WeekResets ?? DateTimeOffset.Now.AddHours(75));
             g3?.Set(p.Day, ArcRing.TealHot);
             previewHost.Child = row;
-            widthText.Text = $"Width {WidthFor(draft)} px";
+            widthText.Text = L("Width {0} px", WidthFor(draft));
         }
 
         var previewHeader = new Grid();
         previewHeader.ColumnDefinitions.Add(new ColumnDefinition());
         previewHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var titles = new StackPanel { Spacing = 2 };
-        titles.Children.Add(new TextBlock { Text = "Live preview", FontSize = 16, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-        titles.Children.Add(Muted("The taskbar widget with the current settings."));
+        titles.Children.Add(new TextBlock { Text = L("Live preview"), FontSize = 16, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        titles.Children.Add(Muted(L("The taskbar widget with the current settings.")));
         previewHeader.Children.Add(titles);
         Grid.SetColumn(widthText, 1);
         widthText.VerticalAlignment = VerticalAlignment.Top;
@@ -227,7 +244,7 @@ public sealed partial class MainPlugin
 
         ToggleSwitch Toggle(bool on, Action<bool> set)
         {
-            var t = new ToggleSwitch { IsOn = on, OnContent = "On", OffContent = "Off", MinWidth = 0 };
+            var t = new ToggleSwitch { IsOn = on, OnContent = L("On"), OffContent = L("Off"), MinWidth = 0 };
             t.Toggled += (_, _) => { set(t.IsOn); Changed(); };
             return t;
         }
@@ -256,35 +273,35 @@ public sealed partial class MainPlugin
         page.Children.Add(previewCard);
 
         // ---- Account ----
-        page.Children.Add(Section("Plan limits", "Sign in with Claude Code to show your real 5-hour and weekly limits."));
+        page.Children.Add(Section(L("Plan limits"), L("Sign in with Claude Code to show your real 5-hour and weekly limits.")));
         var signIn = new Button { MinWidth = 110 };
-        var accountRow = Row("", "Claude account", "", signIn, out var status);
+        var accountRow = Row("", L("Claude account"), "", signIn, out var status);
         async void UpdateAccount()
         {
             var exe = PlanUsage.ClaudeExe();
             var state = _plan switch
             {
-                { State: PlanState.Ok } => "Signed in. Showing your real 5-hour and weekly limits.",
-                { State: PlanState.NeedsSignIn } => "Not signed in. Using the token budgets below.",
-                { State: PlanState.Error } p => $"Couldn't read plan limits ({p.Message}). Using the token budgets below.",
-                _ => "Checking…",
+                { State: PlanState.Ok } => L("Signed in. Showing your real 5-hour and weekly limits."),
+                { State: PlanState.NeedsSignIn } => L("Not signed in. Using the token budgets below."),
+                { State: PlanState.Error } p => L("Couldn't read plan limits ({0}). Using the token budgets below.", p.Message ?? ""),
+                _ => L("Checking…"),
             };
-            if (exe is null) state = "Claude Code (claude.exe) was not found. Install it to sign in.";
-            signIn.Content = _plan?.State == PlanState.Ok ? "Sign in again" : "Sign in";
+            if (exe is null) state = L("Claude Code (claude.exe) was not found. Install it to sign in.");
+            signIn.Content = _plan?.State == PlanState.Ok ? L("Sign in again") : L("Sign in");
             signIn.IsEnabled = exe is not null && !_signingIn;
             status.Text = state;
 
             // Account name, read off the UI thread; shown above the status line.
             var acct = await Task.Run(PlanUsage.ReadAccount);
             if (acct is null || _plan?.State == PlanState.NeedsSignIn) return;
-            var who = string.Join(" · ", new[] { acct.Name, acct.Email, acct.Plan is null ? null : acct.Plan + " plan" }
+            var who = string.Join(" · ", new[] { acct.Name, acct.Email, acct.Plan is null ? null : L("{0} plan", acct.Plan) }
                 .Where(x => !string.IsNullOrWhiteSpace(x)));
             if (who.Length > 0) status.Text = who + "\n" + state;
         }
         signIn.Click += async (_, _) =>
         {
             signIn.IsEnabled = false;
-            status.Text = "Waiting for sign-in in your browser…";
+            status.Text = L("Waiting for sign-in in your browser…");
             await SignInFlowAsync();
             UpdateAccount();
             RefreshPreview();
@@ -293,28 +310,37 @@ public sealed partial class MainPlugin
         page.Children.Add(accountRow);
 
         // ---- Taskbar view ----
-        page.Children.Add(Section("Taskbar view", "What the widget shows on the taskbar."));
-        page.Children.Add(Row("", "5-hour limit", "Show the rolling 5-hour usage gauge.",
+        page.Children.Add(Section(L("Taskbar view"), L("What the widget shows on the taskbar.")));
+        page.Children.Add(Row("", L("5-hour limit"), L("Show the rolling 5-hour usage gauge."),
             Toggle(draft.ShowSession, v => draft.ShowSession = v)));
-        page.Children.Add(Row("", "Weekly limit", "Show the 7-day usage gauge.",
+        page.Children.Add(Row("", L("Weekly limit"), L("Show the 7-day usage gauge."),
             Toggle(draft.ShowWeek, v => draft.ShowWeek = v)));
-        page.Children.Add(Row("\uE8BF", "Daily usage", "Show today's usage gauge, measured against the daily budget below.",
+        page.Children.Add(Row("\uE8BF", L("Daily usage"), L("Show today's gauge: your use against today's share of the weekly limit (the daily budget below when not signed in)."),
             Toggle(draft.ShowDay, v => draft.ShowDay = v)));
-        page.Children.Add(Row("", "Labels", "Show the small names (5h, Week, Today) above the percentages.",
+        page.Children.Add(Row("", L("Labels"), L("Show the small names (5h, Week, Today) above the percentages."),
             Toggle(draft.ShowLabels, v => draft.ShowLabels = v)));
+        page.Children.Add(Row("", L("Time left"), L("Replace the 5h and Week labels with the time until each limit resets (needs sign-in)."),
+            Toggle(draft.ShowTimeLeft, v => draft.ShowTimeLeft = v)));
+
+        // ---- Flyout ----
+        page.Children.Add(Section(L("Flyout"), L("What the big window shows under each limit (needs sign-in).")));
+        page.Children.Add(Row("", L("Time left"), L("Show the time left, the reset time and a progress bar for the window."),
+            Toggle(draft.ShowFlyoutTime, v => draft.ShowFlyoutTime = v)));
+        page.Children.Add(Row("", L("Pace"), L("Show whether you are ahead of, on, or behind pace for the window."),
+            Toggle(draft.ShowPace, v => draft.ShowPace = v)));
 
         // ---- Colours ----
-        page.Children.Add(Section("Colours", "Gauges turn amber, then red, as usage climbs."));
-        page.Children.Add(Row("", "Warning at", "Percent used when a gauge turns amber.",
+        page.Children.Add(Section(L("Colours"), L("Gauges turn amber, then red, as usage climbs.")));
+        page.Children.Add(Row("", L("Warning at"), L("Percent used when a gauge turns amber."),
             Number(draft.WarnAt, 1, 99, 5, v => draft.WarnAt = v, 110)));
-        page.Children.Add(Row("", "Critical at", "Percent used when a gauge turns red.",
+        page.Children.Add(Row("", L("Critical at"), L("Percent used when a gauge turns red."),
             Number(draft.CritAt, 2, 100, 5, v => draft.CritAt = v, 110)));
 
         // ---- Data ----
-        page.Children.Add(Section("Data", "Where the numbers come from and how often they refresh."));
+        page.Children.Add(Section(L("Data"), L("Where the numbers come from and how often they refresh.")));
         var refresh = new ComboBox { MinWidth = 130 };
         int[] minutes = [1, 5, 15];
-        foreach (var m in minutes) refresh.Items.Add(m == 1 ? "1 minute" : $"{m} minutes");
+        foreach (var m in minutes) refresh.Items.Add(m == 1 ? L("1 minute") : L("{0} minutes", m));
         refresh.SelectedIndex = Math.Max(0, Array.IndexOf(minutes, draft.RefreshMinutes));
         refresh.SelectionChanged += (_, _) =>
         {
@@ -322,8 +348,8 @@ public sealed partial class MainPlugin
             draft.RefreshMinutes = minutes[refresh.SelectedIndex];
             Changed();
         };
-        page.Children.Add(Row("", "Refresh every", "Plan limits are asked for at most every 5 minutes.", refresh));
-        page.Children.Add(Row("", "Count cache reads", "Include cached input in token totals. Cache reads are cheap, so they are off by default.",
+        page.Children.Add(Row("", L("Refresh every"), L("Plan limits are asked for at most every 5 minutes."), refresh));
+        page.Children.Add(Row("", L("Count cache reads"), L("Include cached input in token totals. Cache reads are cheap, so they are off by default."),
             Toggle(draft.IncludeCacheReads, v => draft.IncludeCacheReads = v)));
         var folder = new TextBox
         {
@@ -336,15 +362,15 @@ public sealed partial class MainPlugin
             draft.DataFolder = string.IsNullOrWhiteSpace(folder.Text) ? null : folder.Text.Trim();
             Changed();
         };
-        page.Children.Add(Row("", "Claude data folder", "Claude Code's session logs. Leave empty for the default.", folder));
+        page.Children.Add(Row("", L("Claude data folder"), L("Claude Code's session logs. Leave empty for the default."), folder));
 
         // ---- Token budgets ----
-        page.Children.Add(Section("Token budgets", "Used for the gauges when you are not signed in, and for the Today ring."));
-        page.Children.Add(Row("", "5-hour budget", "Million tokens.",
+        page.Children.Add(Section(L("Token budgets"), L("Used for the gauges when you are not signed in.")));
+        page.Children.Add(Row("", L("5-hour budget"), L("Million tokens."),
             Number(draft.SessionLimitM, 0.1, 1000, 0.5, v => draft.SessionLimitM = v)));
-        page.Children.Add(Row("", "Weekly budget", "Million tokens.",
+        page.Children.Add(Row("", L("Weekly budget"), L("Million tokens."),
             Number(draft.WeekLimitM, 0.1, 10000, 1, v => draft.WeekLimitM = v)));
-        page.Children.Add(Row("", "Daily budget", "Million tokens, for the Today ring.",
+        page.Children.Add(Row("", L("Daily budget"), L("Million tokens, for the Today ring when not signed in."),
             Number(draft.DayLimitM, 0.1, 1000, 0.5, v => draft.DayLimitM = v)));
 
         RefreshPreview();

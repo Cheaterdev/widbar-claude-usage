@@ -24,7 +24,9 @@ public sealed record UsageSnapshot(
     Totals Last30Days,
     IReadOnlyList<(DateOnly Day, Totals Totals)> Daily7,
     IReadOnlyList<(string Model, Totals Totals)> ByModel30,
-    int Messages30);
+    int Messages30,
+    Totals? WeekWindow = null,       // since the current weekly window started
+    Totals? TodayInWindow = null);   // today, but only the part inside that window
 
 // Reads Claude Code's local session logs (~/.claude/projects/**/*.jsonl). Every
 // assistant message carries a usage block; we sum those. Nothing leaves the
@@ -34,7 +36,7 @@ public static class UsageReader
     public static string DefaultRoot =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "projects");
 
-    public static UsageSnapshot Read(string? root)
+    public static UsageSnapshot Read(string? root, DateTime? weekStart = null)
     {
         root = string.IsNullOrWhiteSpace(root) ? DefaultRoot : root;
         var now = DateTime.Now;
@@ -43,7 +45,7 @@ public static class UsageReader
         var seen = new HashSet<string>();
         var perDay = new Dictionary<DateOnly, Totals>();
         var perModel = new Dictionary<string, Totals>();
-        Totals h5 = Totals.Zero, d1 = Totals.Zero, d7 = Totals.Zero, d30 = Totals.Zero;
+        Totals h5 = Totals.Zero, d1 = Totals.Zero, d7 = Totals.Zero, d30 = Totals.Zero, ww = Totals.Zero, tw = Totals.Zero;
         int messages = 0;
 
         if (Directory.Exists(root))
@@ -76,6 +78,7 @@ public static class UsageReader
                         if (day == today) d1 += t;
                         if (day >= today.AddDays(-6)) d7 += t;
                         if (local >= now.AddHours(-5)) h5 += t;
+                        if (weekStart is { } ws && local >= ws) { ww += t; if (day == today) tw += t; }
                     }
                 }
                 catch { /* file locked or being rewritten; skip it this round */ }
@@ -91,7 +94,7 @@ public static class UsageReader
             .Select(kv => (kv.Key, kv.Value))
             .ToList();
 
-        return new UsageSnapshot(now, h5, d1, d7, d30, daily, models, messages);
+        return new UsageSnapshot(now, h5, d1, d7, d30, daily, models, messages, weekStart is null ? null : ww, weekStart is null ? null : tw);
     }
 
     private static bool TryParse(string line, out DateTime ts, out string model, out Totals totals, out string? key)

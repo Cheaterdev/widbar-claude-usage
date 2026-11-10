@@ -4,9 +4,13 @@ using System.Text.Json;
 
 namespace ClaudeUsage.ExtensionApp;
 
+// Extra usage ("credits") on top of the plan: a monthly spending cap. Amounts are in cents.
+public sealed record ExtraUsage(bool Enabled, double? Limit, double? Used, double? Pct);
+
 public sealed record PlanLimits(
     double SessionPct, DateTimeOffset? SessionResets,
-    double WeekPct, DateTimeOffset? WeekResets);
+    double WeekPct, DateTimeOffset? WeekResets,
+    bool HasSession = true, bool HasWeek = true, ExtraUsage? Extra = null);
 
 public sealed record AccountInfo(string? Name, string? Email, string? Plan);
 
@@ -147,18 +151,42 @@ public static class PlanUsage
             if (!resp.IsSuccessStatusCode)
                 return new PlanResult(PlanState.Error, Message: $"HTTP {(int)resp.StatusCode}");
 
-            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+            var body = await resp.Content.ReadAsStringAsync();
+            SaveDump(body);
+            using var doc = JsonDocument.Parse(body);
             var r = doc.RootElement;
             var (sp, sr) = Window(r, "five_hour");
             var (wp, wr) = Window(r, "seven_day");
-            if (sp is null && wp is null)
+            var extra = ReadExtra(r);
+            if (sp is null && wp is null && extra is null)
                 return new PlanResult(PlanState.Error, Message: "Unexpected response");
-            return new PlanResult(PlanState.Ok, new PlanLimits(sp ?? 0, sr, wp ?? 0, wr));
+            return new PlanResult(PlanState.Ok, new PlanLimits(sp ?? 0, sr, wp ?? 0, wr, sp is not null, wp is not null, extra));
         }
         catch (Exception ex)
         {
             return new PlanResult(PlanState.Error, Message: ex.GetType().Name);
         }
+    }
+
+    // Keeps the last usage answer (percentages and limits only, no token) so the
+    // shape can be checked when Claude changes it. Overwritten on every fetch.
+    private static void SaveDump(string body)
+    {
+        try
+        {
+            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClaudeUsageWidget");
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "last-usage.json"), body);
+        }
+        catch { }
+    }
+
+    private static ExtraUsage? ReadExtra(JsonElement root)
+    {
+        if (!root.TryGetProperty("extra_usage", out var e) || e.ValueKind != JsonValueKind.Object) return null;
+        double? Num(string n) => e.TryGetProperty(n, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetDouble(out var d) ? d : null;
+        var enabled = e.TryGetProperty("is_enabled", out var en) && en.ValueKind == JsonValueKind.True;
+        return new ExtraUsage(enabled, Num("monthly_limit"), Num("used_credits"), Num("utilization"));
     }
 
     private static (double? Pct, DateTimeOffset? Resets) Window(JsonElement root, string name)

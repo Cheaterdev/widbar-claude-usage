@@ -55,12 +55,16 @@ Open the widget's settings from WidBar, or from the gear in the flyout. A live p
 | **Taskbar view** | Show or hide the 5-hour, weekly and daily rings. Show or hide the small labels above the percentages. |
 | **Colours** | Choose the percentage where a ring turns amber (default 80) and red (default 95). |
 | **Data** | Choose how often it refreshes (1, 5 or 15 minutes). Count cache reads in token totals (off by default). Point to a different Claude data folder. |
-| **Token budgets** | Set 5-hour, weekly and daily budgets, in millions of tokens. They are used for the rings when you are not signed in, and always for the daily ring. |
+| **Token budgets** | Set 5-hour, weekly and daily budgets, in millions of tokens. They are used for the rings when you are not signed in. |
+
+## Languages
+
+The widget follows WidBar's language setting (or your Windows display language if WidBar is set to automatic). Available: English, Ukrainian, German, Spanish, French and Italian. Anything else shows English.
 
 ## Good to know
 
 - **Real limits need sign-in.** Without it, the 5-hour and weekly rings compare your recent token use with the budgets you set in Settings. These are estimates, not your actual plan limits.
-- **The daily ring is not a Claude limit.** Claude has no daily limit. This ring measures today's tokens against a daily budget you choose, so it is just a personal gauge.
+- **The daily ring is not a Claude limit.** Claude has no daily limit. When you are signed in, this ring shows how much of *today's share of your weekly limit* you have used. The share is what is left of the week at the start of today, divided by the days remaining, and today's part of your weekly percentage is estimated from your Claude Code usage. Without sign-in it compares today's tokens with the daily budget you set. Either way it is a personal gauge.
 - **Costs are estimates.** They are your tokens multiplied by Anthropic's published API prices, which are read from Anthropic's pricing page and refreshed once a day. This is what the same usage would cost on pay-as-you-go API pricing. It is **not** your bill: a Pro or Max subscription is a flat fee.
 - **Claude Code usage only.** Token counts and costs come from Claude Code on this computer. Chats on claude.ai and usage on other computers are not included in them. The 5-hour and weekly percentages come from your account, so they count everything Claude counts.
 - **It can break.** The widget uses a Claude endpoint that is not officially documented. If Claude changes it, the rings fall back to estimates until the widget is updated.
