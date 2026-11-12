@@ -58,6 +58,24 @@ public static class SyncStore
 
     private static string _lastWritten = "";
 
+    // True when the shared folder could not be reached on the last round (offline
+    // network drive, Tailscale not connected, ...). False when it was reachable or
+    // no shared folder is set.
+    public static volatile bool Offline;
+
+    // Checks (and if needed creates) the folder. A network path that is down can take a
+    // while to fail, so this is only called from the background refresh.
+    public static bool Reachable(string folder)
+    {
+        try
+        {
+            if (Directory.Exists(folder)) return true;
+            Directory.CreateDirectory(folder);
+            return Directory.Exists(folder);
+        }
+        catch { return false; }
+    }
+
     // Writes this computer's usage. Skipped when nothing changed since the last write.
     public static void Write(string folder, IReadOnlyList<Bucket> buckets)
     {

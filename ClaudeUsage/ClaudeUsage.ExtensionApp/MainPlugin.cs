@@ -391,6 +391,42 @@ public sealed partial class MainPlugin :
             Ring(2, L("Today"), Percent(s.Today, _settings.DayLimitM), Local(s.Today, _settings.DayLimitM), ArcRing.Teal);
         p.Add(row);
 
+        // Weekly limits that apply to a single model (e.g. Fable), when the account has them.
+        if (_plan?.State == PlanState.Ok && _plan.Limits?.Scoped is { Count: > 0 } scoped)
+            foreach (var sl in scoped)
+            {
+                var sbody = new StackPanel { Spacing = 4 };
+                var head = new Grid();
+                head.ColumnDefinitions.Add(new ColumnDefinition());
+                head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                head.Children.Add(new TextBlock { Text = L("{0} weekly limit", sl.Name), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+                var pctText = new TextBlock { Text = $"{sl.Pct:0.#}%", FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold };
+                Grid.SetColumn(pctText, 1);
+                head.Children.Add(pctText);
+                sbody.Children.Add(head);
+                sbody.Children.Add(new ProgressBar
+                {
+                    Minimum = 0, Maximum = 100, Value = Math.Clamp(sl.Pct, 0, 100), Height = 6,
+                    Foreground = new SolidColorBrush(ArcRing.Warn(ArcRing.Blue, sl.Pct)),
+                });
+                if (sl.Resets is not null)
+                    sbody.Children.Add(new TextBlock { Text = Reset(sl.Resets), FontSize = 11, Opacity = 0.6 });
+                p.Add(Card(sbody));
+            }
+
+        // The shared folder is set but cannot be reached: the other computers are missing below.
+        if (!string.IsNullOrWhiteSpace(_settings.SyncFolder) && SyncStore.Offline)
+        {
+            var warn = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            warn.Children.Add(new TextBlock { Text = "●", FontSize = 12, Foreground = new SolidColorBrush(Microsoft.UI.Colors.Red), VerticalAlignment = VerticalAlignment.Top });
+            warn.Children.Add(new TextBlock
+            {
+                Text = L("Shared folder not reachable. Other computers are not included. Check your network or VPN (for example Tailscale)."),
+                FontSize = 12, Opacity = 0.8, TextWrapping = TextWrapping.Wrap, MaxWidth = 300,
+            });
+            p.Add(warn);
+        }
+
         // Filter for everything below (the rings above are account-wide).
         if (s.Sources is { Count: > 1 } sources)
         {
@@ -501,7 +537,7 @@ public sealed partial class MainPlugin :
         p.Add(SectionHeader(L("By model · 30 days (est. cost)")));
         var mmax = Math.Max(1, v.ByModel30.Select(m => m.Totals.Headline(cache)).DefaultIfEmpty(0).Max());
         var models = new StackPanel { Spacing = 6 };
-        foreach (var (model, t) in v.ByModel30.Take(6))
+        foreach (var (model, t) in v.ByModel30.Take(12))
             models.Children.Add(BarRow(UsageReader.FriendlyModel(model), t.Headline(cache), mmax, UsageReader.Money(t.Cost)));
         p.Add(models);
         }

@@ -48,9 +48,14 @@ public static class UsageReader
         if (!string.IsNullOrWhiteSpace(syncFolder))
         {
             var folder = syncFolder.Trim();
-            SyncStore.Write(folder, local);
-            all = local.Concat(SyncStore.ReadOthers(folder, DateTime.UtcNow.AddDays(-31))).ToList();
+            SyncStore.Offline = !SyncStore.Reachable(folder);
+            if (!SyncStore.Offline)
+            {
+                SyncStore.Write(folder, local);
+                all = local.Concat(SyncStore.ReadOthers(folder, DateTime.UtcNow.AddDays(-31))).ToList();
+            }
         }
+        else SyncStore.Offline = false;
         return all;
     }
 

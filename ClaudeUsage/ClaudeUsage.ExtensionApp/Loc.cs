@@ -97,7 +97,14 @@ internal static class Loc
         R("{0}% ahead", "На {0}% попереду", "{0}% voraus", "{0}% por delante", "{0}% d'avance", "{0}% avanti");
         R("{0}% behind", "На {0}% позаду", "{0}% zurück", "{0}% por detrás", "{0}% de retard", "{0}% indietro");
         R("5-hour limit", "Ліміт 5 год", "5-Stunden-Limit", "Límite de 5 horas", "Limite de 5 heures", "Limite 5 ore");
-        R("Weekly limit", "Ліміт тижня", "Wochenlimit", "Límite semanal", "Limite hebdomadaire", "Limite settimanale");
+        R("Shared folder not reachable. Other computers are not included. Check your network or VPN (for example Tailscale).",
+            "Спільна папка недоступна. Інші комп'ютери не враховано. Перевірте мережу або VPN (наприклад, Tailscale).",
+            "Gemeinsamer Ordner nicht erreichbar. Andere Computer sind nicht enthalten. Prüfe Netzwerk oder VPN (z. B. Tailscale).",
+            "Carpeta compartida no accesible. No se incluyen los demás equipos. Revisa la red o la VPN (por ejemplo Tailscale).",
+            "Dossier partagé inaccessible. Les autres ordinateurs ne sont pas inclus. Vérifiez le réseau ou le VPN (par exemple Tailscale).",
+            "Cartella condivisa non raggiungibile. Gli altri computer non sono inclusi. Controlla la rete o la VPN (ad esempio Tailscale).");
+        R("{0} weekly limit","Тижневий ліміт {0}", "{0}-Wochenlimit", "Límite semanal de {0}", "Limite hebdomadaire {0}", "Limite settimanale {0}");
+        R("Weekly limit","Ліміт тижня", "Wochenlimit", "Límite semanal", "Limite hebdomadaire", "Limite settimanale");
         R("5 hours", "5 годин", "5 Stunden", "5 horas", "5 heures", "5 ore");
         R("7 days", "7 днів", "7 Tage", "7 días", "7 jours", "7 giorni");
         R("30 days", "30 днів", "30 Tage", "30 días", "30 jours", "30 giorni");

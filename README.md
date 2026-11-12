@@ -21,6 +21,7 @@ Claude Usage is a widget for [WidBar](https://apps.microsoft.com/detail/9PKLDNM8
 **In the flyout (click the widget)**
 
 - Large rings for each limit, with the time left, the reset time and a small progress bar. A pace note tells you whether you are on pace, ahead or behind.
+- Weekly limits that apply to a single model (for example Fable), when your plan has them.
 - Your extra usage credits, when you have them turned on.
 - A picker to look at one computer or all of them (see *Using Claude on several computers*).
 - **Estimated cost** for today, the last 7 days and the last 30 days, with the number of tokens behind each figure.
@@ -50,6 +51,12 @@ Out of the box, the rings use rough estimates. To show your **real** limits, the
 Settings shows which account is signed in (name, email and plan) so you can confirm the numbers are for the account you expect.
 
 If Claude Code was not found on this computer, the button changes to **Get Claude Code** and opens the official page. Install it, then try again.
+
+### Keeping the sign-in alive
+
+Your sign-in token is short-lived (about 8 hours, counted on the clock, whether or not the computer is on). Claude Code renews it when it sends a request. So that the rings keep showing your real limits when you have not used Claude Code for a while, the widget lets Claude Code send **one tiny message** (the request "Reply with one word: ok" to the Haiku model, from a temporary folder; the reply is discarded) when the token has expired. This costs a negligible amount of your usage, happens at most once every few hours, and the message may show up in your Claude Code history.
+
+If the computer has been off for a long time (weeks), the sign-in may have expired for good. Press **Sign in again** in that case. Claude Code itself would ask you to sign in again too.
 
 ## Settings
 
@@ -102,5 +109,5 @@ When more than one computer has reported usage, the flyout shows a picker (**All
 | It says Claude Code was not found | Press **Get Claude Code**, install it, then reopen Settings. |
 | It says no usage was found | Use Claude Code once, or set the right folder in **Settings > Data > Claude data folder**. |
 | The numbers do not match Claude exactly | Wait for the next refresh. Plan limits are asked for at most every 5 minutes. |
-| Sign-in worked before but the rings are estimates again | Your sign-in expired. Press **Sign in again** in Settings. |
+| Sign-in worked before but the rings are estimates again | Your sign-in expired. The widget normally renews it by itself (see *Keeping the sign-in alive*); if it could not, press **Sign in again** in Settings. |
 | The preview looks cut off on the taskbar | Fewer rings take less space. Turn one off in **Taskbar view**. |

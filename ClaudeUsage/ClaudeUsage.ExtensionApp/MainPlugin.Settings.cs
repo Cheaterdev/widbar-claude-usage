@@ -395,6 +395,13 @@ public sealed partial class MainPlugin
             FolderBox(draft.DataFolder, UsageReader.DefaultRoot, v => { draft.DataFolder = v; Changed(); })));
         page.Children.Add(Row("", L("Shared folder"), L("Combine usage from several computers. Point each one at the same synced folder."),
             FolderBox(draft.SyncFolder, L("Not shared"), v => { draft.SyncFolder = v; Changed(); })));
+        if (!string.IsNullOrWhiteSpace(draft.SyncFolder) && SyncStore.Offline)
+        {
+            var warn = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 0, 0, 6) };
+            warn.Children.Add(new TextBlock { Text = "●", FontSize = 12, Foreground = new SolidColorBrush(Microsoft.UI.Colors.Red), VerticalAlignment = VerticalAlignment.Top });
+            warn.Children.Add(new TextBlock { Text = L("Shared folder not reachable. Other computers are not included. Check your network or VPN (for example Tailscale)."), FontSize = 12, Opacity = 0.8, TextWrapping = TextWrapping.Wrap });
+            page.Children.Add(warn);
+        }
 
         // ---- Token budgets ----
         page.Children.Add(Section(L("Token budgets"), L("Used for the gauges when you are not signed in.")));

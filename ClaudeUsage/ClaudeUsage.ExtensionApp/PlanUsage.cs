@@ -10,7 +10,11 @@ public sealed record ExtraUsage(bool Enabled, double? Limit, double? Used, doubl
 public sealed record PlanLimits(
     double SessionPct, DateTimeOffset? SessionResets,
     double WeekPct, DateTimeOffset? WeekResets,
-    bool HasSession = true, bool HasWeek = true, ExtraUsage? Extra = null);
+    bool HasSession = true, bool HasWeek = true, ExtraUsage? Extra = null,
+    IReadOnlyList<ScopedLimit>? Scoped = null);
+
+// A weekly limit that applies to one model only (for example "Fable").
+public sealed record ScopedLimit(string Name, double Pct, DateTimeOffset? Resets);
 
 public sealed record AccountInfo(string? Name, string? Email, string? Plan);
 
@@ -174,21 +178,28 @@ public static class PlanUsage
         catch { return false; }
     }
 
-    // Claude Code renews its own token whenever it runs, so a stale token is
-    // handled by asking it for its auth status once, quietly.
+    // Claude Code renews its own token (about every 8 hours) only when it makes a
+    // real request; "auth status" does not. So a stale token is renewed by letting
+    // Claude Code send one tiny Haiku message, quietly, from a neutral folder.
+    private static DateTime _lastRenew = DateTime.MinValue;
+
     private static async Task TryRenewAsync()
     {
+        if (DateTime.UtcNow - _lastRenew < TimeSpan.FromMinutes(10)) return;
+        _lastRenew = DateTime.UtcNow;
         var exe = ClaudeExe();
         if (exe is null) return;
         try
         {
-            var psi = Start(exe, "auth status", false);
+            var psi = Start(exe, "-p \"Reply with one word: ok\" --model haiku --max-turns 1", false);
+            psi.WorkingDirectory = Path.GetTempPath();
             psi.RedirectStandardOutput = true;
             psi.RedirectStandardError = true;
             using var p = Process.Start(psi);
             if (p is null) return;
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-            await p.WaitForExitAsync(cts.Token);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            try { await p.WaitForExitAsync(cts.Token); }
+            catch (OperationCanceledException) { try { p.Kill(true); } catch { } }
         }
         catch { }
     }
@@ -225,7 +236,7 @@ public static class PlanUsage
             var extra = ReadExtra(r);
             if (sp is null && wp is null && extra is null)
                 return new PlanResult(PlanState.Error, Message: "Unexpected response");
-            return new PlanResult(PlanState.Ok, new PlanLimits(sp ?? 0, sr, wp ?? 0, wr, sp is not null, wp is not null, extra));
+            return new PlanResult(PlanState.Ok, new PlanLimits(sp ?? 0, sr, wp ?? 0, wr, sp is not null, wp is not null, extra, ReadScoped(r)));
         }
         catch (Exception ex)
         {
@@ -252,6 +263,32 @@ public static class PlanUsage
         double? Num(string n) => e.TryGetProperty(n, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetDouble(out var d) ? d : null;
         var enabled = e.TryGetProperty("is_enabled", out var en) && en.ValueKind == JsonValueKind.True;
         return new ExtraUsage(enabled, Num("monthly_limit"), Num("used_credits"), Num("utilization"));
+    }
+
+    // Per-model weekly limits: entries of "limits" with kind "weekly_scoped".
+    private static List<ScopedLimit> ReadScoped(JsonElement root)
+    {
+        var list = new List<ScopedLimit>();
+        try
+        {
+            if (!root.TryGetProperty("limits", out var arr) || arr.ValueKind != JsonValueKind.Array) return list;
+            foreach (var e in arr.EnumerateArray())
+            {
+                if (!e.TryGetProperty("kind", out var k) || k.GetString() != "weekly_scoped") continue;
+                if (!e.TryGetProperty("percent", out var p) || !p.TryGetDouble(out var pct)) continue;
+                string? name = null;
+                if (e.TryGetProperty("scope", out var sc) && sc.ValueKind == JsonValueKind.Object)
+                    foreach (var part in new[] { "model", "surface" })
+                        if (name is null && sc.TryGetProperty(part, out var m) && m.ValueKind == JsonValueKind.Object
+                            && m.TryGetProperty("display_name", out var dn) && dn.ValueKind == JsonValueKind.String)
+                            name = dn.GetString();
+                DateTimeOffset? resets = e.TryGetProperty("resets_at", out var r) && r.ValueKind == JsonValueKind.String
+                    && DateTimeOffset.TryParse(r.GetString(), out var t) ? t : null;
+                list.Add(new ScopedLimit(string.IsNullOrWhiteSpace(name) ? "Model" : name!, pct, resets));
+            }
+        }
+        catch { }
+        return list;
     }
 
     private static (double? Pct, DateTimeOffset? Resets) Window(JsonElement root, string name)
