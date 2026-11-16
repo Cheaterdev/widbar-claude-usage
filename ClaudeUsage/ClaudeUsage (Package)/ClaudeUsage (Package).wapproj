@@ -38,6 +38,7 @@
          ARM64 (Copilot+) PCs. Building with /p:AppxBundle=Always produces a
          single .msixbundle with both. -->
     <AppxBundlePlatforms>x64|arm64</AppxBundlePlatforms>
+    <GenerateTemporaryStoreCertificate>True</GenerateTemporaryStoreCertificate>
   </PropertyGroup>
   <ItemGroup>
     <AppxManifest Include="Package.appxmanifest">
@@ -52,6 +53,7 @@
       <Link>Public\plugin.json</Link>
     </Content>
     <Content Include="Images\*.png" />
+    <None Include="Package.StoreAssociation.xml" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ClaudeUsage.ExtensionApp\ClaudeUsage.ExtensionApp.csproj">

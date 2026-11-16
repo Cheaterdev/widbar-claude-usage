@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
@@ -9,13 +9,13 @@
 
   <!-- Update Publisher to match your signing certificate / Store identity. -->
   <Identity
-    Name="ClaudeUsage.Widget"
-    Publisher="CN=Developer"
+    Name="cheater.dev.ClaudeUsageforWidBar"
+    Publisher="CN=71BCF477-B58C-419D-9129-BAD4B9E1193D"
     Version="1.0.0.0" />
 
   <Properties>
-    <DisplayName>Claude Usage</DisplayName>
-    <PublisherDisplayName>Developer</PublisherDisplayName>
+    <DisplayName>Claude Usage for WidBar</DisplayName>
+    <PublisherDisplayName>cheater.dev</PublisherDisplayName>
     <Logo>Images\StoreLogo.png</Logo>
   </Properties>
 
@@ -33,7 +33,7 @@
       Executable="$targetnametoken$.exe"
       EntryPoint="$targetentrypoint$">
       <uap:VisualElements
-        DisplayName="Claude Usage"
+        DisplayName="Claude Usage for WidBar"
         Description="Claude token usage at a glance: last 5 hours, today, 7 and 30 days, per model."
         BackgroundColor="transparent" Square150x150Logo="Images\MediumTile.png" Square44x44Logo="Images\AppIcon.png">
         <uap:DefaultTile Square71x71Logo="Images\SmallTile.png" Wide310x150Logo="Images\WideTile.png" Square310x310Logo="Images\LargeTile.png"/>

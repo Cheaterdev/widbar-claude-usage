@@ -38,8 +38,11 @@ if (-not $msbuild) { $msbuild = (Get-Command msbuild -ErrorAction SilentlyContin
 if (-not $msbuild) { throw 'MSBuild was not found. Install Visual Studio (with the .NET desktop / Windows App SDK workloads).' }
 
 # The 4th number counts up on every build, so a newer local build installs over an older one.
-$minutes = [int]((Get-Date) - [datetime]'2026-01-01').TotalMinutes % 65535
-$pkgVersion = "$Version.$minutes"
+# One tick = 10 minutes since 2026-01-01. The old per-minute counter wrapped around (65535 limit)
+# every 45 days and then looked like a downgrade; this one stays unique until about April 2027.
+$ticks = [int]([math]::Floor(((Get-Date) - [datetime]'2026-01-01').TotalMinutes / 10))
+if ($ticks -gt 65535) { throw 'Build counter is out of range: bump the base version in this script.' }
+$pkgVersion = "$Version.$ticks"
 
 $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($pfx, $password)
 $subject = [Security.SecurityElement]::Escape($cert.Subject)

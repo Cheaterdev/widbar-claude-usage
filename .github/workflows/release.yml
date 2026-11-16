@@ -12,8 +12,11 @@ name: Release
 # signed package:
 #   SIGNING_CERT_BASE64    the .pfx certificate, base64 encoded
 #   SIGNING_CERT_PASSWORD  its password
-# Without them the build is unsigned: fine for the Microsoft Store upload, but
-# Windows will not install an unsigned .msixbundle directly.
+# Two packages come out of every build:
+#   ClaudeUsage-<v>-store.msixupload  for Partner Center. Built with the Store identity
+#                                     in Package.appxmanifest, unsigned (the Store signs it).
+#   ClaudeUsage-<v>.msixbundle + .cer for GitHub / sideloading. Own identity, signed with
+#                                     the secrets above; needs the secrets to be built.
 
 on:
   push:
@@ -89,6 +92,37 @@ jobs:
           $csproj = [regex]::Replace($csproj, '(<WidBarPluginVersion>)[^<]*(</WidBarPluginVersion>)', ('${1}' + $core + '${2}'))
           Set-Content $env:APP_CSPROJ $csproj -NoNewline -Encoding utf8
 
+      - name: Restore
+        shell: pwsh
+        run: msbuild "$env:PROJECT" -t:Restore -p:Configuration=Release -p:Platform=x64
+
+      # 1) Microsoft Store package. The manifest in the repository carries the Store
+      #    identity (Name, Publisher, PublisherDisplayName from Partner Center), and the
+      #    Store signs the package itself, so this one is built UNSIGNED.
+      #    Restore and build must be separate MSBuild calls (see the template docs,
+      #    "Pitfalls": a combined call fails in MakeAppx with 80080204).
+      - name: Build the Microsoft Store package
+        shell: pwsh
+        run: |
+          msbuild $env:PROJECT -t:Build -p:Configuration=Release -p:Platform=x64 `
+            -p:AppxBundle=Always '-p:AppxBundlePlatforms=x64|arm64' `
+            -p:UapAppxPackageBuildMode=StoreAndSideload -p:AppxAutoIncrementPackageRevision=false
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $v = '${{ steps.ver.outputs.version }}'
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $pkgRoot = Split-Path $env:PROJECT -Parent
+          $store = Get-ChildItem (Join-Path $pkgRoot 'AppPackages') -Recurse -File -Filter *.msixupload | Select-Object -First 1
+          if (-not $store) { throw 'No .msixupload was produced. See the build log.' }
+          Copy-Item $store.FullName "dist/ClaudeUsage-$v-store.msixupload"
+
+          # Start the second build from a clean package folder.
+          Remove-Item (Join-Path $pkgRoot 'AppPackages') -Recurse -Force
+          Remove-Item (Join-Path $pkgRoot 'bin') -Recurse -Force -ErrorAction SilentlyContinue
+
+      # 2) Sideload package (GitHub Release), signed with the project's own certificate.
+      #    It gets its own identity so it can never collide with the Store version:
+      #    the Publisher must equal the certificate subject exactly.
       - name: Import the signing certificate
         id: cert
         if: ${{ env.HAS_CERT == 'true' }}
@@ -101,9 +135,9 @@ jobs:
           [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERT_BASE64))
           $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($pfx, $env:CERT_PASSWORD)
 
-          # The package Publisher must match the certificate subject exactly.
           $subject = [Security.SecurityElement]::Escape($cert.Subject)
           $manifest = Get-Content $env:MANIFEST -Raw
+          $manifest = [regex]::Replace($manifest, '(?s)(<Identity\b[^>]*?\bName=")[^"]*(")', '${1}ClaudeUsage.Widget${2}', 1)
           $manifest = [regex]::Replace($manifest, '(?s)(<Identity\b[^>]*?\bPublisher=")[^"]*(")', ('${1}' + $subject + '${2}'), 1)
           Set-Content $env:MANIFEST $manifest -NoNewline -Encoding utf8
 
@@ -113,31 +147,30 @@ jobs:
 
           "pfx=$pfx" >> $env:GITHUB_OUTPUT
 
-      - name: Restore
-        shell: pwsh
-        run: msbuild "$env:PROJECT" -t:Restore -p:Configuration=Release -p:Platform=x64
-
-      # Restore and build must be separate MSBuild calls (see the template docs,
-      # "Pitfalls": a combined call fails in MakeAppx with 80080204).
-      - name: Build the x64 + ARM64 bundle
+      - name: Build the signed sideload bundle
+        if: ${{ env.HAS_CERT == 'true' }}
         shell: pwsh
         env:
           CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
         run: |
           $msbArgs = @(
-            $env:PROJECT, '-t:Build',
+            $env:PROJECT, '-t:Rebuild',
             '-p:Configuration=Release', '-p:Platform=x64',
             '-p:AppxBundle=Always', '-p:AppxBundlePlatforms=x64|arm64',
-            '-p:UapAppxPackageBuildMode=StoreAndSideload',
-            '-p:AppxAutoIncrementPackageRevision=false'
+            '-p:UapAppxPackageBuildMode=SideloadOnly',
+            '-p:AppxAutoIncrementPackageRevision=false',
+            '-p:AppxPackageSigningEnabled=true',
+            "-p:PackageCertificateKeyFile=${{ steps.cert.outputs.pfx }}",
+            "-p:PackageCertificatePassword=$env:CERT_PASSWORD"
           )
-          if ($env:HAS_CERT -eq 'true') {
-            $msbArgs += '-p:AppxPackageSigningEnabled=true'
-            $msbArgs += "-p:PackageCertificateKeyFile=${{ steps.cert.outputs.pfx }}"
-            $msbArgs += "-p:PackageCertificatePassword=$env:CERT_PASSWORD"
-          }
           msbuild @msbArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $v = '${{ steps.ver.outputs.version }}'
+          $pkgRoot = Split-Path $env:PROJECT -Parent
+          $bundle = Get-ChildItem (Join-Path $pkgRoot 'AppPackages') -Recurse -File -Filter *.msixbundle | Select-Object -First 1
+          if (-not $bundle) { throw 'No .msixbundle was produced. See the build log.' }
+          Copy-Item $bundle.FullName "dist/ClaudeUsage-$v.msixbundle"
 
       - name: Gather the release files
         id: files
@@ -145,22 +178,6 @@ jobs:
         run: |
           $v = '${{ steps.ver.outputs.version }}'
           $signed = $env:HAS_CERT -eq 'true'
-          New-Item -ItemType Directory -Force dist | Out-Null
-
-          $pkgRoot = Split-Path $env:PROJECT -Parent
-          $found = Get-ChildItem (Join-Path $pkgRoot 'AppPackages') -Recurse -File |
-            Where-Object { $_.Extension -in '.msixupload', '.msixbundle' }
-          $found | ForEach-Object { Write-Host "found: $($_.FullName)" }
-
-          $store = $found | Where-Object Extension -eq '.msixupload' | Select-Object -First 1
-          $bundle = $found | Where-Object Extension -eq '.msixbundle' | Select-Object -First 1
-          if (-not $store -and -not $bundle) { throw 'No .msixupload or .msixbundle was produced. See the build log.' }
-
-          if ($store)  { Copy-Item $store.FullName  "dist/ClaudeUsage-$v-store.msixupload" }
-          if ($bundle) {
-            $suffix = if ($signed) { '' } else { '-unsigned' }
-            Copy-Item $bundle.FullName "dist/ClaudeUsage-$v$suffix.msixbundle"
-          }
 
           # Release notes shown on the Release page (generated notes are added below them).
           if ($signed) {
