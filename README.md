@@ -94,6 +94,8 @@ When more than one computer has reported usage, the flyout shows a picker (**All
 
 ## Privacy
 
+The full policy is in [PRIVACY.md](PRIVACY.md). In short:
+
 - Your usage records are read **on your computer** from Claude Code's local files (`.claude\projects`). They are not uploaded anywhere.
 - To get your real limits, the widget reads the sign-in token that Claude Code stores on your computer and sends it **only to Anthropic** (`api.anthropic.com`). The token is never written to a file, logged or shown.
 - Your account name and email, shown in Settings, are read from Claude Code's local files. They stay on your computer.
